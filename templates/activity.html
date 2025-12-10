@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>Activity Feed</h2>
+  <ul class="activity-list">
+    {% for item in items %}
+    <li class="activity-item">
+      <div class="activity-left">
+        <strong>{{ item.user.username if item.user else 'Unknown' }}</strong>
+        <div class="muted small">{{ item.activity.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </div>
+      <div class="activity-right">
+        <div>{{ item.activity.verb }} {% if item.presentation %} on <a href="/presentations/{{ item.presentation.id }}">{{ item.presentation.title }}</a>{% endif %}</div>
+      </div>
+    </li>
+    {% else %}
+    <li>No recent activity.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

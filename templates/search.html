@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>Search results</h2>
+  <form method="get" class="hero-search" style="margin-bottom:12px">
+    <input name="q" value="{{ q }}" placeholder="Search presentations, authors, tags..." />
+    <button class="btn" type="submit">Search</button>
+  </form>
+
+  <div class="results">
+    {% if results %}
+      <div class="grid">
+        {% for r in results %}
+        <article class="card">
+          <a class="card__thumb" href="/presentations/{{ r.id }}">
+            <img src="{{ r.cover_url or request.url_for('static', path='cover-placeholder.svg') }}" alt="{{ r.title }}" />
+          </a>
+          <div class="card__body">
+            <a class="card__title" href="/presentations/{{ r.id }}">{{ r.title }}</a>
+            <div class="card__meta">{{ r.owner.username if r.owner else 'Unknown' }} • {{ r.created_at.strftime('%Y-%m-%d') if r.created_at else '' }}</div>
+            <p class="card__desc">{{ r.description or "-" }}</p>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty">No results found for "{{ q }}".</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

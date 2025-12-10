@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>Edit Profile</h2>
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" class="auth-form">
+    <label class="field">Full name
+      <input name="full_name" value="{{ user_obj.full_name or '' }}" />
+    </label>
+    <label class="field">Bio
+      <textarea name="bio">{{ user_obj.bio or '' }}</textarea>
+    </label>
+    <label class="field">Avatar
+      <input name="avatar" type="file" />
+    </label>
+    <div class="auth-actions"><button class="btn">Save</button><a class="btn btn--ghost" href="/me">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

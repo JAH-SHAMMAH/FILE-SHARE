@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270" fill="none">
+  <defs>
+    <linearGradient id="slideGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb" />
+      <stop offset="1" stop-color="#22d3ee" />
+    </linearGradient>
+  </defs>
+  <rect width="480" height="270" rx="12" fill="#0f172a" />
+  <rect x="14" y="14" width="452" height="242" rx="10" fill="#111827" stroke="#1f2937" />
+  <rect x="30" y="34" width="180" height="110" rx="10" fill="url(#slideGrad)" opacity="0.9" />
+  <rect x="230" y="50" width="200" height="18" rx="6" fill="#e5edff" />
+  <rect x="230" y="78" width="160" height="14" rx="5" fill="#dbeafe" />
+  <rect x="230" y="100" width="120" height="12" rx="4" fill="#c7ddff" />
+  <rect x="30" y="164" width="120" height="60" rx="8" fill="#1f2937" />
+  <rect x="170" y="164" width="120" height="60" rx="8" fill="#1f2937" />
+  <rect x="310" y="164" width="120" height="60" rx="8" fill="#1f2937" />
+  <text x="32" y="152" fill="#e5e7eb" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Slide preview</text>
+</svg>

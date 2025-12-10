@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="{{ url_for('index') }}" class="brand">FILE-SHARE</a>
+      <form class="header-search" action="{{ url_for('search') }}" method="get">
+        <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
+        <button type="submit">Search</button>
+      </form>
+      <nav class="header-nav">
+        {% set cu = request.state.current_user if request and request.state else None %}
+        {% if cu %}
+          <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
+          <a class="nav-link" href="{{ url_for('profile_view', username=cu.username) }}">{{ cu.username }}</a>
+          <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+          <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+          <a class="nav-link btn" href="{{ url_for('register') }}">Sign up</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="container auth-page">
+    <div class="auth-card">
+      <h2>Sign in to SlideShare</h2>
+      <p class="muted" style="margin-top:4px;">Continue with Scribd or LinkedIn, or sign in with your email.</p>
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+      <div id="form-status" class="alert alert-error" style="display:none;"></div>
+
+      <div class="auth-stack">
+        <button type="button" class="btn full-btn" style="background:#1e7b85; box-shadow:none;">Continue with Scribd</button>
+        <button type="button" class="btn full-btn btn--ghost" style="border-color:#0a66c2; color:#0a66c2;">Continue with LinkedIn</button>
+        <div class="or-divider"><span>or continue with email</span></div>
+
+        <form method="post" action="{{ url_for('login') }}" class="auth-form" id="login-form">
+          <label class="field">Username
+            <input name="username" required autofocus />
+          </label>
+          <label class="field">Password
+            <input name="password" type="password" required />
+          </label>
+          <button class="btn full-btn" type="submit">Sign in</button>
+        </form>
+      </div>
+
+      <div class="auth-footer">
+        <p class="muted" style="margin:8px 0;">Forgot your password? <a href="/reset">Reset it</a>.</p>
+        <p class="muted">New to SlideShare? <a href="{{ url_for('register') }}">Sign Up</a></p>
+        <p class="muted" style="font-size:12px;">By continuing you agree to Scribd’s <a href="/terms">Terms of use</a> and <a href="/privacy">Privacy policy</a></p>
+      </div>
+    </div>
+    <aside class="content-card" style="margin-top:0;">
+      <h4>Secure login</h4>
+      <ul class="muted">
+        <li>Use your account to upload and manage decks</li>
+        <li>Stay signed in on trusted devices</li>
+        <li>Switch themes anytime</li>
+      </ul>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand" href="{{ url_for('index') }}">SlideSharezz</a>
+        <p class="muted">Share presentations, find ideas.</p>
+      </div>
+      <div>
+        <h4>Support</h4>
+        <ul>
+          <li><a href="{{ url_for('help') }}">Help Center</a></li>
+          <li><a href="{{ url_for('contact') }}">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bar">© {{ current_year or 2025 }} SlideShare Prototype</div>
+  </footer>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>

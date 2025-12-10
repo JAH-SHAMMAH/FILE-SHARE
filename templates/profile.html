@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card profile-page">
+  <div class="profile-header" style="display:flex;gap:16px;align-items:center">
+    <div class="avatar">
+      {% set initials = (user_obj.username or '??')[:2].upper() %}
+      {% if user_obj.avatar %}
+      <img src="/download/{{ user_obj.avatar }}" alt="avatar" style="width:120px;height:120px;border-radius:12px" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      {% endif %}
+      <div class="avatar-fallback" style="width:120px;height:120px;border-radius:12px;display:{% if user_obj.avatar %}none{% else %}flex{% endif %};align-items:center;justify-content:center;font-weight:800;font-size:32px;color:#1f1f3f;background:linear-gradient(135deg,#eef1ff,#ffd9a8);">
+        {{ initials }}
+      </div>
+    </div>
+    <div>
+      <h2>{{ user_obj.full_name or user_obj.username }}</h2>
+      <p class="muted">{{ user_obj.bio or 'No bio provided yet.' }}</p>
+      <div class="meta muted">Followers: {{ follower_count }} • Following: {{ following_count }}</div>
+      {% if current_user and current_user.username == user_obj.username %}
+      <div style="margin-top:8px"><a class="btn" href="/me/edit">Edit profile</a></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <section style="margin-top:18px">
+    <h3>Presentations</h3>
+    <div class="grid">
+      {% for p in presentations %}
+      <article class="card">
+        <a class="card__thumb" href="/presentations/{{ p.id }}">
+          <img src="{{ p.cover_url or request.url_for('static', path='cover-placeholder.svg') }}" alt="{{ p.title }}" />
+        </a>
+        <div class="card__body">
+          <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
+          <div class="card__meta">Views: {{ p.views }}{% if p.category %} • {{ p.category.name }}{% endif %}</div>
+          <p class="card__desc">{{ p.description or "-" }}</p>
+        </div>
+      </article>
+      {% else %}
+      <div class="empty">No presentations yet.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

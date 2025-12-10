@@ -1,0 +1,33 @@
+{% extends "base.html" %} {% block content %}
+<h2>Premium Dashboard</h2>
+<div class="stats">
+  <div>Total presentations: <strong>{{ total_presentations }}</strong></div>
+  <div>Total views: <strong>{{ total_views }}</strong></div>
+</div>
+<section>
+  <h3>Your Presentations</h3>
+  <ul>
+    {% for p in presentations %}
+    <li>
+      <a href="/presentations/{{ p.id }}">{{ p.title }}</a> — Views: {{ p.views
+      }}
+    </li>
+    {% else %}
+    <li>No presentations</li>
+    {% endfor %}
+  </ul>
+</section>
+<section>
+  <h3>Transactions</h3>
+  <ul>
+    {% for t in transactions %}
+    <li>
+      {{ t.created_at.strftime('%Y-%m-%d') }} — {{ t.amount }} {{ t.currency }}
+      — {{ t.status }}
+    </li>
+    {% else %}
+    <li>No transactions recorded.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

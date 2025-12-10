@@ -1,0 +1,29 @@
+:root{
+  --brand:#2b7cd3; /* slide-share like blue */
+  --muted:#666;
+  --bg:#f7f9fb;
+}
+*{box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;margin:0;background:var(--bg);color:#222}
+.container{max-width:1000px;margin:0 auto;padding:16px}
+.site-header{background:linear-gradient(90deg,var(--brand),#1f6fb0);color:#fff}
+.site-header .container{display:flex;align-items:center;justify-content:space-between}
+.brand{font-weight:700;color:#fff;text-decoration:none}
+nav a{color:#fff;margin-left:12px;text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:#fff;padding:12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+.meta{color:var(--muted);font-size:13px}
+/* Hero and two-column layout */
+.hero{background:linear-gradient(90deg,var(--brand),#1f6fb0);color:#fff;padding:40px 16px;margin-bottom:16px;border-radius:6px}
+.hero h1{margin:0 0 8px}
+.two-col{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.viewer{background:#fff;padding:12px;border-radius:6px}
+.thumbnails{display:flex;gap:8px;overflow:auto;padding-top:8px}
+form label{display:block;margin:8px 0}
+input,textarea,button{padding:8px;border:1px solid #ddd;border-radius:4px}
+button{background:var(--brand);color:#fff;border:none}
+.site-footer{padding:12px;text-align:center;color:#777}
+.error{background:#ffdede;padding:8px;border-left:4px solid #e00}
+.button{display:inline-block;padding:8px 12px;background:#fff;border:1px solid #ddd;border-radius:4px;text-decoration:none;color:var(--brand)}
+@media (max-width:600px){.site-header .container{flex-direction:column;gap:8px}}
+@media (max-width:900px){.two-col{grid-template-columns:1fr}} 

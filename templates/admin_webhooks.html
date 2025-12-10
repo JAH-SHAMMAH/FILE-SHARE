@@ -1,0 +1,27 @@
+{% extends "base.html" %} {% block content %}
+<h2>Webhook Events</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Event Type</th>
+      <th>Verified</th>
+      <th>Date</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.id }}</td>
+      <td>{{ e.event_type }}</td>
+      <td>{{ e.verified }}</td>
+      <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="4">No webhook events</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

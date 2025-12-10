@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FILE SHARE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="{{ url_for('index') }}" class="brand">FILE SHARE</a>
+        <nav class="header-nav--mini" style="display:flex;gap:8px;align-items:center">
+          <a class="nav-link" href="{{ url_for('about') }}">About</a>
+          <a class="nav-link" href="{{ url_for('help') }}">Help</a>
+          <a class="nav-link" href="{{ url_for('contact') }}">Contact</a>
+        </nav>
+      </div>
+      <form class="header-search" action="{{ url_for('search') }}" method="get">
+        <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
+        <button type="submit">Search</button>
+      </form>
+      <nav class="header-nav">
+        {% if current_user %}
+          {% set initials = (current_user.username or '??')[:2].upper() %}
+          <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
+          <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
+            <div class="avatar-badge">{{ initials }}</div>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="profile-menu">
+            <div class="profile-menu__head">
+              <div class="avatar-badge">{{ initials }}</div>
+              <div>
+                <div class="profile-menu__name">{{ current_user.username }}</div>
+                <div class="profile-menu__email">{{ current_user.email or '' }}</div>
+              </div>
+            </div>
+            <a class="profile-menu__item" href="#saved">Saved</a>
+            <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
+            <a class="profile-menu__item" href="#analytics">Analytics</a>
+            <a class="profile-menu__item" href="#settings">Account Settings</a>
+            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
+            <div class="profile-menu__divider"></div>
+            <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
+          </div>
+        {% else %}
+          <a class="nav-link" href="{{ url_for('login') }}">Sign in</a>
+          <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
+        {% endif %}
+        <button id="theme-toggle" class="theme-toggle" type="button">Dark mode</button>
+      </nav>
+    </div>
+  </header>
+
+  {% if current_user %}
+  <div class="signed-in-ribbon">
+    <div class="container ribbon-inner">
+      <span class="pill pill--tiny">New</span>
+      <div>
+        <div class="ribbon-title">Slideshare begins a new chapter with a refreshed design.</div>
+        <a class="muted" href="#">Learn about our rebrand here.</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <main class="page-shell">
+    {% if not current_user %}
+    <section class="landing-hero">
+      <div class="container hero-inner landing-grid">
+        <div class="hero-copy">
+          <div class="pill">Download free for 30 days</div>
+          <h1 class="mega-title">
+            <span class="hl">Here,</span>
+            <span class="hl hl--soft">there's no</span>
+            <span class="hl">such thing</span>
+            <span class="hl hl--soft">as a blank slide.</span>
+          </h1>
+          <p class="muted lead">Starting a new presentation is never easy, but with a little inspiration, you're never really starting from scratch.</p>
+          <form class="hero-search" action="{{ url_for('search') }}" method="get">
+            <label class="sr-only" for="landing-search">Search</label>
+            <input id="landing-search" name="q" type="search" placeholder="Search 25M presentations, people, topics" value="{{ request.query_params.get('q', '') }}" aria-label="Search" />
+            <button type="submit">Submit search</button>
+          </form>
+          <div class="hero-actions">
+            <a class="btn" href="{{ url_for('login') }}">Sign in</a>
+            <a class="btn btn--ghost" href="{{ url_for('register') }}">Upload</a>
+            <span class="muted" style="font-size:13px;">EN</span>
+          </div>
+          <div class="quick-links">
+            <span>Nail your pitch</span>
+            <span>Explore AI trends</span>
+            <span>Present your research</span>
+            <span>Future of work</span>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="hero-illustration">
+            <div class="hero-logo">slideshare</div>
+            <div class="hero-shape hero-shape--one"></div>
+            <div class="hero-shape hero-shape--two"></div>
+            <div class="hero-shape hero-shape--three"></div>
+            <div class="hero-card">
+              <div class="badge">AI</div>
+              <div class="hero-card-title">Off to a flying start.</div>
+              <p class="muted">Use AI to rewrite, rephrase, or simplify existing slide content.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container promo-split">
+      <div class="promo-left">
+        <h2 class="promo-title">All the resources, references, and inspiration to help you on your way.</h2>
+        <p class="muted">Get the very best of Slideshare with a free 30-day trial.</p>
+      </div>
+      <div class="promo-right">
+        <div class="plan-card">
+          <div class="plan-header plan-header--warm">Free 30-day trial</div>
+          <div class="plan-body">
+            <ul>
+              <li>Download complete presentations in their original file format</li>
+              <li>Use AI to rewrite, rephrase, or simplify existing slide content</li>
+              <li>Copy &amp; paste to extract key insights</li>
+              <li>Enjoy an ad-free experience across all devices</li>
+            </ul>
+            <div class="plan-cta">
+              <div class="price">Free for 30 days — then $9.99/month</div>
+              <a class="btn" href="{{ url_for('register') }}">Start free trial</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="plan-card">
+          <div class="plan-header plan-header--cool">Ad-supported</div>
+          <div class="plan-body">
+            <ul>
+              <li>25M+ presentations and documents on any topic</li>
+              <li>Get personalized recommendations for deeper discovery</li>
+              <li>Upload and share knowledge with a global community of 70M users</li>
+            </ul>
+            <div class="plan-cta">
+              <a class="btn btn--ghost" href="{{ url_for('login') }}">Access at no cost</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container trust-strip">
+      <div class="trust-item">
+        <div class="mini-icon" aria-hidden="true">🔍</div>
+        <div>
+          <div class="trust-title">Search 25M+ decks</div>
+          <p class="muted">Find inspiration fast with curated topics and smart search.</p>
+        </div>
+      </div>
+      <div class="trust-item">
+        <div class="mini-icon" aria-hidden="true">⬇️</div>
+        <div>
+          <div class="trust-title">Download originals</div>
+          <p class="muted">Grab PPT, PDF, or DOC files that work with your stack.</p>
+        </div>
+      </div>
+      <div class="trust-item">
+        <div class="mini-icon" aria-hidden="true">✨</div>
+        <div>
+          <div class="trust-title">Rewrite with AI</div>
+          <p class="muted">Refine slides, rephrase content, and simplify jargon.</p>
+        </div>
+      </div>
+      <div class="trust-item">
+        <div class="mini-icon" aria-hidden="true">☁️</div>
+        <div>
+          <div class="trust-title">Upload from the cloud</div>
+          <p class="muted">Bring decks from Drive, Box, or OneDrive in seconds.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container feature-panel">
+      <div class="panel-head">
+        <h2 class="section-title">It all starts with a slide.</h2>
+        <p class="muted">If you're wondering how everyone else builds decks, now's your chance to find out.</p>
+      </div>
+      <div class="category-grid">
+        {% for cat in ["Business","Mobile","Social Media","Marketing","Technology","Art & Photos","Career","Design"] %}
+          <a class="category-chip" href="/search?q={{ cat|urlencode }}">{{ cat }}</a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="container slide-marquee">
+      <div class="panel-head">
+        <h3 class="section-title">Trending today</h3>
+        <p class="muted">Peek at what the community is reading.</p>
+      </div>
+      <div class="marquee-row">
+        {% set sample_slides = [
+          {"title": "Telemedicine ppt", "author": "khandhar", "views": "171.5K", "badge": "PPTX"},
+          {"title": "Health information systems (his)", "author": "Nkosinathi Lungu", "views": "59.2K", "badge": "PPTX"},
+          {"title": "Quality Assurance in Hospitals", "author": "Nc Das", "views": "169.8K", "badge": "PPTX"},
+          {"title": "Medical records ppt", "author": "Sudipto Karmakar", "views": "226.7K", "badge": "PPTX"},
+          {"title": "Management of shock", "author": "khadeejakhurshid", "views": "133.4K", "badge": "PPT"},
+          {"title": "Medico legal case", "author": "Nc Das", "views": "269.6K", "badge": "PPT"},
+          {"title": "Burns management", "author": "SCGH ED CME", "views": "186.5K", "badge": "PPTX"},
+          {"title": "Finding & Validating Startup/Product Ideas", "author": "Ujjwal Trivedi", "views": "990", "badge": "PDF"}
+        ] %}
+        <div class="marquee-track">
+          {% for slide in sample_slides %}
+          <article class="slide-card">
+            <div class="badge">{{ slide.badge }}</div>
+            <div class="slide-title">{{ slide.title }}</div>
+            <p class="muted">by {{ slide.author }} · {{ slide.views }} views</p>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="container visual-gallery">
+      <div class="panel-head">
+        <h3 class="section-title">See the slides before you click</h3>
+        <p class="muted">A quick look at popular decks people are saving right now.</p>
+      </div>
+      <div class="gallery-grid">
+        {% for i in range(6) %}
+          <div class="gallery-card">
+            <img src="{{ request.url_for('static', path='slide-placeholder.png') }}" alt="Slide preview {{ i + 1 }}">
+            <div class="gallery-meta">
+              <span class="badge">PPTX</span>
+              <span class="muted">{{ ["Business","Design","AI","Marketing","Health","Career"][i % 6] }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="container feature-panel two-up">
+      <div class="feature-card">
+        <h3 class="section-title">Go ahead. Geek out.</h3>
+        <p class="muted">Uncover something new and evolve your approach.</p>
+      </div>
+      <div class="feature-card">
+        <h3 class="section-title">Off to a flying start.</h3>
+        <p class="muted">Use AI to rewrite, rephrase, or simplify existing slide content to suit your needs.</p>
+      </div>
+    </section>
+
+    <section class="container feature-panel two-up">
+      <div class="feature-card">
+        <h3 class="section-title">Remember that great insight on slide 64?</h3>
+        <p class="muted">You don't need to. Download original files that work with your presentation apps.</p>
+      </div>
+      <div class="feature-card">
+        <h3 class="section-title">All the resources, references, and inspiration.</h3>
+        <p class="muted">Get the very best of Slideshare with a free 30-day trial.</p>
+        <div class="cta-stack" style="margin-top:10px;">
+          <a class="btn" href="{{ url_for('register') }}">Free 30-day trial</a>
+          <a class="btn btn--ghost" href="{{ url_for('login') }}">Access with ads</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="container pricing-grid">
+      <div class="plan-card">
+        <div class="pill">Free 30 days</div>
+        <h3>Download complete presentations in their original file format</h3>
+        <ul>
+          <li>Use AI to rewrite, rephrase, or simplify existing slide content</li>
+          <li>Copy and paste to extract key insights</li>
+          <li>Enjoy an ad-free experience across all devices</li>
+        </ul>
+        <p class="price">Free for 30 days, then $9.99/month</p>
+        <a class="btn" href="{{ url_for('register') }}">Start free trial</a>
+        <p class="muted" style="margin-top:8px;">Cancel anytime.</p>
+      </div>
+      <div class="plan-card plan-card--ghost">
+        <div class="pill">Ad-supported</div>
+        <h3>Access at no cost with on-page ads</h3>
+        <ul>
+          <li>25M+ presentations and documents on any topic</li>
+          <li>Get personalized recommendations for deeper discovery</li>
+          <li>Upload and share knowledge with a global community of 70M users</li>
+        </ul>
+        <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
+        <p class="muted" style="margin-top:8px;">Additional features available only with trial or subscription.</p>
+      </div>
+    </section>
+
+    <section class="container upload-cta">
+      <div class="upload-card">
+        <div>
+          <p class="pill">Upload</p>
+          <h3>Your big ideas deserve an audience.</h3>
+          <p class="muted">Upload a presentation and share your know-how with the world.</p>
+          <a class="btn" href="{{ url_for('register') }}">Upload a presentation</a>
+          <p class="muted" style="margin-top:8px;">Supported: PPT, PPTX, PPSX, POTX, PDF, DOC, DOCX.</p>
+        </div>
+        <div class="cloud-logos muted">
+          <span>Upload from another service:</span>
+          <div class="cloud-row">
+            <span class="cloud-chip">Google Drive</span>
+            <span class="cloud-chip">Box</span>
+            <span class="cloud-chip">OneDrive</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container faq-panel">
+      <div class="panel-head">
+        <h3 class="section-title">Frequently asked questions</h3>
+      </div>
+      <div class="faq-list">
+        <div class="faq-item">
+          <div class="faq-q">What is Slideshare?</div>
+          <div class="faq-a">A community of 70M users sharing 25M presentations on any topic.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Do I need a subscription?</div>
+          <div class="faq-a">No. Start with an ad-supported experience or try premium free for 30 days.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What is included in a subscription?</div>
+          <div class="faq-a">Original downloads, AI-assisted rewriting, ad-free usage, and richer discovery.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">How do I cancel?</div>
+          <div class="faq-a">You can cancel anytime within settings—trial runs for 30 days.</div>
+        </div>
+      </div>
+    </section>
+    {% else %}
+
+    <section class="container dashboard-hero">
+      <div>
+        <p class="muted" style="text-transform:uppercase; letter-spacing:1px; font-size:12px;">Welcome back</p>
+        <h1 class="section-title" style="font-size:28px;">Here are the latest uploads from the community.</h1>
+        <div class="auth-actions" style="margin-top:12px;">
+          <a class="btn" href="{{ url_for('upload') }}">Upload</a>
+          <a class="btn btn--ghost" href="{{ url_for('search') }}">Search everything</a>
+        </div>
+      </div>
+      <div class="signed-in-metrics">
+        <div>
+          <div class="metric-value">{{ presentations|length }}</div>
+          <div class="muted">Total presentations</div>
+        </div>
+        <div>
+          <div class="metric-value">25M+</div>
+          <div class="muted">Ideas to explore</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container layout-two-col" style="margin-top:12px;">
+      <div>
+        <div class="content-card" style="margin-top:0;">
+          <div class="content-head">
+            <h2>Featured & Trending</h2>
+            <a class="muted" href="{{ url_for('search') }}">See all</a>
+          </div>
+          <div class="grid" style="margin-top:16px;">
+            {% for pres in presentations %}
+            {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+            {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+            {% set thumb_url = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+            <article class="card">
+              <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+                <div class="card__thumb">
+                  {% if is_pdf %}
+                  <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ thumb_url }}">
+                    <canvas class="thumb-canvas" aria-label="{{ pres.title }} preview"></canvas>
+                    <object data="{{ thumb_url }}" data-thumb="{{ thumb_url }}" type="application/pdf" class="thumb-object" aria-label="{{ pres.title }} preview"></object>
+                  </div>
+                  {% else %}
+                  <img src="{{ thumb_url }}" alt="{{ pres.title }}">
+                  {% endif %}
+                </div>
+                <div class="card__body">
+                  <h3>{{ pres.title }}</h3>
+                  <p class="muted">{{ pres.author or 'Unknown' }}{% if pres.views is not none %} · {{ pres.views }} views{% endif %}</p>
+                </div>
+              </a>
+              <div class="card__actions">
+                <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Preview</button>
+                <a class="btn" href="{{ url_for('view_presentation', presentation_id=pres.id) }}">Open</a>
+              </div>
+            </article>
+            {% else %}
+            <p class="muted">No presentations yet. Be the first to <a href="{{ url_for('upload') }}">upload</a>.</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="content-card">
+          <div class="content-head">
+            <h3>Latest Uploads</h3>
+            <a class="muted" href="{{ url_for('upload') }}">Add yours</a>
+          </div>
+          <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">
+            {% for pres in presentations[:8] %}
+            {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+            {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+            {% set thumb_url = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+            <article class="card">
+              <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+                <div class="card__thumb">
+                  {% if is_pdf %}
+                  <iframe class="thumb-frame" src="{{ thumb_url }}" title="{{ pres.title }} preview" loading="lazy"></iframe>
+                  {% else %}
+                  <img src="{{ thumb_url }}" alt="{{ pres.title }}">
+                  {% endif %}
+                </div>
+                <div class="card__body">
+                  <h4>{{ pres.title }}</h4>
+                  <p class="muted">{{ pres.author or 'Unknown' }}</p>
+                </div>
+              </a>
+              <div class="card__actions">
+                <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Preview</button>
+                <a class="btn" href="{{ url_for('view_presentation', presentation_id=pres.id) }}">Open</a>
+              </div>
+            </article>
+            {% else %}
+            <p class="muted">Uploads will appear here as soon as content is added.</p>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <aside class="sidebar">
+        <div class="content-card">
+          <h4>Top Topics</h4>
+          <ul class="muted">
+            <li><a href="/search?q=AI">AI & Machine Learning</a></li>
+            <li><a href="/search?q=marketing">Marketing Strategy</a></li>
+            <li><a href="/search?q=design">Product Design</a></li>
+            <li><a href="/search?q=leadership">Leadership</a></li>
+            <li><a href="/search?q=education">Education</a></li>
+          </ul>
+        </div>
+        <div class="content-card premium-card">
+          <div class="pill">Premium</div>
+          <h3 style="margin:8px 0 6px 0;">Have a lightbulb moment.</h3>
+          <p class="muted" style="margin:0 0 10px 0;">Power your next presentation with professional insights and inspiring content.</p>
+          <div class="auth-actions" style="margin-top:6px;">
+            <a class="btn" href="/premium">Learn more</a>
+            <a class="btn btn--ghost" href="{{ url_for('upload') }}">Upload now</a>
+          </div>
+        </div>
+      </aside>
+    </section>
+    {% endif %}
+  </main>
+
+  <div id="preview-modal" class="preview-modal hidden">
+    <div class="preview-backdrop" data-preview-close></div>
+    <div class="preview-dialog">
+      <div class="preview-head">
+        <div>
+          <div class="preview-title" id="preview-title">Preview</div>
+          <div class="preview-status muted" id="preview-status"></div>
+        </div>
+        <button class="preview-close" type="button" data-preview-close aria-label="Close preview">×</button>
+      </div>
+      <div class="preview-body" id="preview-body">
+        <div class="preview-placeholder" id="preview-placeholder">
+          <div class="pill pill--tiny">Preview</div>
+          <p class="muted" style="margin:8px 0 0 0;">Loading first page…</p>
+        </div>
+        <canvas id="preview-canvas" class="file-preview file-preview--canvas" aria-label="Presentation preview"></canvas>
+        <object id="preview-object" class="file-preview" type="application/pdf" aria-label="Presentation preview fallback"></object>
+        <div class="preview-message hidden" id="preview-message"></div>
+      </div>
+      <div class="preview-actions" id="preview-actions">
+        <a id="preview-open" class="btn" href="#" target="_blank" rel="noopener">Open full view</a>
+        <a id="preview-download" class="btn btn--ghost" href="#">Download original</a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand" href="{{ url_for('index') }}">SlideSharezz</a>
+        <p class="muted">Share presentations, find ideas.</p>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="{{ url_for('about') }}">About</a></li>
+          <li><a href="#">Careers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Support</h4>
+        <ul>
+          <li><a href="{{ url_for('help') }}">Help Center</a></li>
+          <li><a href="{{ url_for('contact') }}">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bar">© {{ current_year or 2025 }} SlideShare Prototype</div>
+  </footer>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>
