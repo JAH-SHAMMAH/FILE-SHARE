@@ -35,15 +35,15 @@
   <main class="container auth-page">
     <div class="auth-card">
       <h2>Sign in to SlideShare</h2>
-      <p class="muted" style="margin-top:4px;">Continue with Scribd or LinkedIn, or sign in with your email.</p>
+      <p class="muted" style="margin-top:4px;">Continue with google or LinkedIn, or sign in with your email.</p>
       {% if error %}
       <div class="alert alert-error">{{ error }}</div>
       {% endif %}
       <div id="form-status" class="alert alert-error" style="display:none;"></div>
 
       <div class="auth-stack">
-        <button type="button" class="btn full-btn" style="background:#1e7b85; box-shadow:none;">Continue with Scribd</button>
-        <button type="button" class="btn full-btn btn--ghost" style="border-color:#0a66c2; color:#0a66c2;">Continue with LinkedIn</button>
+        <a class="btn full-btn" href="{{ url_for('oauth_login', provider='google') }}" style="background:#4285f4; box-shadow:none;">Continue with Google</a>
+        <a class="btn full-btn btn--ghost" href="{{ url_for('oauth_login', provider='linkedin') }}" style="border-color:#0a66c2; color:#0a66c2;">Continue with LinkedIn</a>
         <div class="or-divider"><span>or continue with email</span></div>
 
         <form method="post" action="{{ url_for('login') }}" class="auth-form" id="login-form">
@@ -59,8 +59,8 @@
 
       <div class="auth-footer">
         <p class="muted" style="margin:8px 0;">Forgot your password? <a href="/reset">Reset it</a>.</p>
-        <p class="muted">New to SlideShare? <a href="{{ url_for('register') }}">Sign Up</a></p>
-        <p class="muted" style="font-size:12px;">By continuing you agree to Scribd’s <a href="/terms">Terms of use</a> and <a href="/privacy">Privacy policy</a></p>
+        <p class="muted">New to FileShare? <a href="{{ url_for('register') }}">Sign Up</a></p>
+        <p class="muted" style="font-size:12px;">By continuing you agree to FileShare's <a href="/terms">Terms of use</a> and <a href="/privacy">Privacy policy</a></p>
       </div>
     </div>
     <aside class="content-card" style="margin-top:0;">
@@ -76,7 +76,7 @@
   <footer class="site-footer">
     <div class="container footer-grid">
       <div>
-        <a class="brand" href="{{ url_for('index') }}">SlideSharezz</a>
+        <a class="brand" href="{{ url_for('index') }}">FileShare</a>
         <p class="muted">Share presentations, find ideas.</p>
       </div>
       <div>
@@ -94,7 +94,7 @@
         </ul>
       </div>
     </div>
-    <div class="container footer-bar">© {{ current_year or 2025 }} SlideShare Prototype</div>
+    <div class="container footer-bar">© {{ current_year or 2025 }} FileShare</div>
   </footer>
 
   <script src="{{ request.url_for('static', path='js/main.js') }}"></script>

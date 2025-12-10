@@ -64,8 +64,8 @@
     <div class="container ribbon-inner">
       <span class="pill pill--tiny">New</span>
       <div>
-        <div class="ribbon-title">Slideshare begins a new chapter with a refreshed design.</div>
-        <a class="muted" href="#">Learn about our rebrand here.</a>
+        <div class="ribbon-title">upload upload upload!</div>
+        <a class="muted" href="about.html">Learn more about us.</a>
       </div>
     </div>
   </div>
@@ -81,7 +81,7 @@
             <span class="hl">Here,</span>
             <span class="hl hl--soft">there's no</span>
             <span class="hl">such thing</span>
-            <span class="hl hl--soft">as a blank slide.</span>
+            <span class="hl hl--soft">as a bad slide.</span>
           </h1>
           <p class="muted lead">Starting a new presentation is never easy, but with a little inspiration, you're never really starting from scratch.</p>
           <form class="hero-search" action="{{ url_for('search') }}" method="get">
@@ -103,7 +103,7 @@
         </div>
         <div class="hero-visual">
           <div class="hero-illustration">
-            <div class="hero-logo">slideshare</div>
+            <div class="hero-logo">Fileshare</div>
             <div class="hero-shape hero-shape--one"></div>
             <div class="hero-shape hero-shape--two"></div>
             <div class="hero-shape hero-shape--three"></div>
@@ -143,7 +143,7 @@
           <div class="plan-header plan-header--cool">Ad-supported</div>
           <div class="plan-body">
             <ul>
-              <li>25M+ presentations and documents on any topic</li>
+              <li>10M+ presentations and documents on any topic</li>
               <li>Get personalized recommendations for deeper discovery</li>
               <li>Upload and share knowledge with a global community of 70M users</li>
             </ul>
@@ -159,7 +159,7 @@
       <div class="trust-item">
         <div class="mini-icon" aria-hidden="true">🔍</div>
         <div>
-          <div class="trust-title">Search 25M+ decks</div>
+          <div class="trust-title">Search 10M+ decks</div>
           <p class="muted">Find inspiration fast with curated topics and smart search.</p>
         </div>
       </div>
@@ -197,7 +197,7 @@
         {% endfor %}
       </div>
     </section>
-
+<!-- 
     <section class="container slide-marquee">
       <div class="panel-head">
         <h3 class="section-title">Trending today</h3>
@@ -224,9 +224,9 @@
           {% endfor %}
         </div>
       </div>
-    </section>
+    </section> -->
 
-    <section class="container visual-gallery">
+    <!-- <section class="container visual-gallery">
       <div class="panel-head">
         <h3 class="section-title">See the slides before you click</h3>
         <p class="muted">A quick look at popular decks people are saving right now.</p>
@@ -242,7 +242,7 @@
           </div>
         {% endfor %}
       </div>
-    </section>
+    </section> -->
 
     <section class="container feature-panel two-up">
       <div class="feature-card">
@@ -287,9 +287,9 @@
         <div class="pill">Ad-supported</div>
         <h3>Access at no cost with on-page ads</h3>
         <ul>
-          <li>25M+ presentations and documents on any topic</li>
+          <li>10M+ presentations and documents on any topic</li>
           <li>Get personalized recommendations for deeper discovery</li>
-          <li>Upload and share knowledge with a global community of 70M users</li>
+          <li>Upload and share knowledge with a global community of 5M users</li>
         </ul>
         <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
         <p class="muted" style="margin-top:8px;">Additional features available only with trial or subscription.</p>
@@ -322,8 +322,8 @@
       </div>
       <div class="faq-list">
         <div class="faq-item">
-          <div class="faq-q">What is Slideshare?</div>
-          <div class="faq-a">A community of 70M users sharing 25M presentations on any topic.</div>
+          <div class="faq-q">What is Fileshare?</div>
+          <div class="faq-a">A community of 5M users sharing 10M presentations on any topic.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Do I need a subscription?</div>
@@ -356,7 +356,7 @@
           <div class="muted">Total presentations</div>
         </div>
         <div>
-          <div class="metric-value">25M+</div>
+          <div class="metric-value">10M+</div>
           <div class="muted">Ideas to explore</div>
         </div>
       </div>
@@ -454,7 +454,7 @@
           <h3 style="margin:8px 0 6px 0;">Have a lightbulb moment.</h3>
           <p class="muted" style="margin:0 0 10px 0;">Power your next presentation with professional insights and inspiring content.</p>
           <div class="auth-actions" style="margin-top:6px;">
-            <a class="btn" href="/premium">Learn more</a>
+            <a class="btn" href="{{ url_for('premium_subscribe') }}">Learn more</a>
             <a class="btn btn--ghost" href="{{ url_for('upload') }}">Upload now</a>
           </div>
         </div>
@@ -484,7 +484,7 @@
       </div>
       <div class="preview-actions" id="preview-actions">
         <a id="preview-open" class="btn" href="#" target="_blank" rel="noopener">Open full view</a>
-        <a id="preview-download" class="btn btn--ghost" href="#">Download original</a>
+        <a id="preview-download" class="btn btn--ghost" href="#" download>Download original</a>
       </div>
     </div>
   </div>
@@ -492,7 +492,7 @@
   <footer class="site-footer">
     <div class="container footer-grid">
       <div>
-        <a class="brand" href="{{ url_for('index') }}">SlideSharezz</a>
+        <a class="brand" href="{{ url_for('index') }}">Fileshare</a>
         <p class="muted">Share presentations, find ideas.</p>
       </div>
       <div>
@@ -517,7 +517,7 @@
         </ul>
       </div>
     </div>
-    <div class="container footer-bar">© {{ current_year or 2025 }} SlideShare Prototype</div>
+    <div class="container footer-bar">© {{ current_year or 2025 }} FileShare</div>
   </footer>
 
   <script src="{{ request.url_for('static', path='js/main.js') }}"></script>

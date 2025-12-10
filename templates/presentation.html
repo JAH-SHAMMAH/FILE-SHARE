@@ -10,7 +10,7 @@
         </div>
         <div class="presentation-actions">
           {% if original_url %}
-          <a class="btn" href="{{ original_url }}" target="_blank" rel="noopener">Open original</a>
+          <a class="btn" href="{{ original_url }}" download>Download original</a>
           {% endif %}
           <a class="btn btn--ghost" href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.url_for('view_presentation', presentation_id=p.id) }}" target="_blank">Share</a>
         </div>
@@ -32,7 +32,7 @@
           <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
             <a class="btn" id="presentation-open" href="{{ viewer_url }}" target="_blank" rel="noopener">Open PDF</a>
             {% if original_url and original_url != viewer_url %}
-            <a class="btn btn--ghost" href="{{ original_url }}" target="_blank" rel="noopener">Download original</a>
+            <a class="btn btn--ghost" href="{{ original_url }}" download>Download original</a>
             {% endif %}
           </div>
         {% elif p.filename %}
@@ -46,7 +46,7 @@
               <p class="muted" style="margin-top:8px;">Preview not available for this file type. Use Download to view the original. Content remains view-only.</p>
             {% endif %}
             {% if original_url %}
-              <div style="margin-top:10px;"><a class="btn" href="{{ original_url }}" target="_blank" rel="noopener">Open original</a></div>
+              <div style="margin-top:10px;"><a class="btn" href="{{ original_url }}" download>Download original</a></div>
             {% endif %}
           </div>
         {% else %}
@@ -58,7 +58,7 @@
     <aside class="presentation-side">
       <div class="box">
         <h4>Actions</h4>
-        <a class="btn" href="/download/{{ p.filename }}">Download</a>
+        <a class="btn" href="/download/{{ p.filename }}" download>Download</a>
         <form method="post" action="/presentations/{{ p.id }}/like" style="display:inline">
           <button class="btn btn--ghost" type="submit">Like ({{ likes }})</button>
         </form>
@@ -82,7 +82,8 @@
     <ul>
       {% for c in comments %}
       <li>
-        <strong>{{ c.user_id }}</strong> <small class="muted">{{ c.created_at.strftime('%Y-%m-%d') }}</small>
+        <strong>{{ comment_users.get(c.user_id) or ('User #' ~ c.user_id) }}</strong>
+        <small class="muted">{{ c.created_at.strftime('%Y-%m-%d') }}</small>
         <div>{{ c.content }}</div>
       </li>
       {% else %}

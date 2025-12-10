@@ -7,6 +7,9 @@ load_dotenv()
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
+PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
+PAYSTACK_BASE = "https://api.paystack.co"
 
 if PAYPAL_MODE == "live":
     PAYPAL_BASE = "https://api-m.paypal.com"
@@ -81,5 +84,47 @@ async def verify_webhook_signature(
             json=body,
             headers=headers,
         )
+        r.raise_for_status()
+        return r.json()
+
+
+# ---------- Paystack helpers ----------
+
+
+async def paystack_initialize_transaction(
+    email: str,
+    amount_kobo: int,
+    callback_url: str,
+    metadata: dict | None = None,
+):
+    if not PAYSTACK_SECRET_KEY:
+        raise RuntimeError("PAYSTACK_SECRET_KEY not configured")
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "email": email,
+        "amount": amount_kobo,
+        "callback_url": callback_url,
+    }
+    if metadata:
+        body["metadata"] = metadata
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{PAYSTACK_BASE}/transaction/initialize", json=body, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
+
+async def paystack_verify_transaction(reference: str):
+    if not PAYSTACK_SECRET_KEY:
+        raise RuntimeError("PAYSTACK_SECRET_KEY not configured")
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{PAYSTACK_BASE}/transaction/verify/{reference}", headers=headers)
         r.raise_for_status()
         return r.json()

@@ -5,7 +5,7 @@
     <div class="avatar">
       {% set initials = (user_obj.username or '??')[:2].upper() %}
       {% if user_obj.avatar %}
-      <img src="/download/{{ user_obj.avatar }}" alt="avatar" style="width:120px;height:120px;border-radius:12px" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      <img src="/download/{{ user_obj.avatar }}?inline=1" alt="avatar" style="width:120px;height:120px;border-radius:12px" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
       {% endif %}
       <div class="avatar-fallback" style="width:120px;height:120px;border-radius:12px;display:{% if user_obj.avatar %}none{% else %}flex{% endif %};align-items:center;justify-content:center;font-weight:800;font-size:32px;color:#1f1f3f;background:linear-gradient(135deg,#eef1ff,#ffd9a8);">
         {{ initials }}

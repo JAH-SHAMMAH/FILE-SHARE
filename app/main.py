@@ -2,6 +2,7 @@ import os
 import shutil
 import logging
 import traceback
+import mimetypes
 from fastapi.exceptions import RequestValidationError
 from fastapi import (
     FastAPI,
@@ -44,8 +45,14 @@ from .auth import (
     get_current_user_optional,
 )
 from jose import jwt
-from .payments import create_order, capture_order, get_access_token
-from .payments import verify_webhook_signature
+from .payments import (
+    create_order,
+    capture_order,
+    get_access_token,
+    verify_webhook_signature,
+    paystack_initialize_transaction,
+    paystack_verify_transaction,
+)
 from .oauth import oauth
 from .tasks import enqueue_conversion
 from .models import ConversionJob
@@ -53,11 +60,16 @@ import uuid
 from pathlib import Path
 from typing import List
 import textwrap
+import json
 
 load_dotenv()
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
+PAYSTACK_AMOUNT_KOBO = int(os.getenv("PAYSTACK_AMOUNT_KOBO", "500000"))  # default 5000.00 NGN
+PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "NGN")
 
 app = FastAPI()
 app.mount(
@@ -191,7 +203,9 @@ def register_post(
 
 @app.get("/login", response_class=HTMLResponse, name="login")
 def login_get(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    # Surface any error passed via query params (e.g., missing OAuth config)
+    err = request.query_params.get("error")
+    return templates.TemplateResponse("login.html", {"request": request, "error": err})
 
 
 @app.post("/login")
@@ -601,6 +615,15 @@ def view_presentation(request: Request, presentation_id: int):
         comments = session.exec(
             select(Comment).where(Comment.presentation_id == presentation_id)
         ).all()
+        comment_users = {}
+        if comments:
+            user_ids = {c.user_id for c in comments if c.user_id is not None}
+            if user_ids:
+                users = session.exec(select(User).where(User.id.in_(user_ids))).all()
+                comment_users = {
+                    u.id: (u.full_name or u.username or f"User {u.id}") for u in users
+                }
+
         likes = session.exec(
             select(Like).where(Like.presentation_id == presentation_id)
         ).all()
@@ -610,7 +633,7 @@ def view_presentation(request: Request, presentation_id: int):
         conversion_status = None
         if p.filename:
             ext = Path(p.filename).suffix.lower()
-            original_url = f"/download/{p.filename}?inline=1"
+            original_url = f"/download/{p.filename}"
             job = session.exec(
                 select(ConversionJob)
                 .where(ConversionJob.presentation_id == presentation_id)
@@ -644,6 +667,7 @@ def view_presentation(request: Request, presentation_id: int):
             "request": request,
             "p": p,
             "comments": comments,
+            "comment_users": comment_users,
             "likes": len(likes),
             "viewer_url": viewer_url,
             "conversion_status": conversion_status,
@@ -665,7 +689,7 @@ def presentation_preview(presentation_id: int):
 
         if p.filename:
             ext = Path(p.filename).suffix.lower()
-            original_url = f"/download/{p.filename}?inline=1"
+            original_url = f"/download/{p.filename}"
             job = session.exec(
                 select(ConversionJob)
                 .where(ConversionJob.presentation_id == presentation_id)
@@ -789,20 +813,23 @@ def download_file(filename: str, inline: bool = Query(False)):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Not found")
 
-    media_type = "application/octet-stream"
-    ext = path.suffix.lower()
-    if ext == ".pdf":
-        media_type = "application/pdf"
+    guessed_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
-    # For inline view, omit filename so Starlette does not force attachment; set explicit inline header.
+    # For inline view, use the real media type and explicit inline disposition.
     if inline:
         return FileResponse(
             path,
-            media_type=media_type,
+            media_type=guessed_type,
             headers={"Content-Disposition": f"inline; filename=\"{filename}\""},
         )
 
-    return FileResponse(path, media_type=media_type, filename=filename)
+    # Force downloads across browsers (including iOS Safari) by always using
+    # attachment disposition and a generic binary media type.
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""},
+    )
 
 
 @app.post("/presentations/{presentation_id}/comment")
@@ -1125,22 +1152,111 @@ def activity_feed(request: Request, current_user: User = Depends(get_current_use
     )
 
 
-@app.get("/premium/subscribe")
-async def premium_subscribe(current_user: User = Depends(get_current_user)):
-    # For demo: create a PayPal order for $5.00
-    order = await create_order("5.00")
-    # Find approval link
-    for link in order.get("links", []):
-        if link.get("rel") == "approve":
-            return RedirectResponse(url=link.get("href"))
-    raise HTTPException(status_code=400, detail="No approval link")
+@app.get("/premium/subscribe", response_class=HTMLResponse)
+async def premium_subscribe(request: Request, current_user: User = Depends(get_current_user)):
+    # Render a Paystack-powered subscribe page
+    error = None
+    if not PAYSTACK_PUBLIC_KEY:
+        error = "Paystack not configured. Set PAYSTACK_PUBLIC_KEY and PAYSTACK_SECRET_KEY."
+    amount_major = PAYSTACK_AMOUNT_KOBO / 100
+    return templates.TemplateResponse(
+        "subscribe.html",
+        {
+            "request": request,
+            "paystack_public_key": PAYSTACK_PUBLIC_KEY,
+            "amount": amount_major,
+            "amount_kobo": PAYSTACK_AMOUNT_KOBO,
+            "currency": PAYSTACK_CURRENCY,
+            "error": error,
+        },
+    )
+
+
+@app.post("/api/paystack/initialize")
+async def paystack_initialize(request: Request, current_user: User = Depends(get_current_user)):
+    if not PAYSTACK_PUBLIC_KEY:
+        raise HTTPException(status_code=400, detail="Paystack not configured")
+    email = current_user.email or f"user{current_user.id}@example.com"
+    callback_url = str(request.url_for("paystack_callback"))
+    metadata = {"user_id": current_user.id, "username": current_user.username}
+    try:
+        init_res = await paystack_initialize_transaction(
+            email=email,
+            amount_kobo=PAYSTACK_AMOUNT_KOBO,
+            callback_url=callback_url,
+            metadata=metadata,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Paystack init failed: {e}")
+
+    data = init_res.get("data", {})
+    auth_url = data.get("authorization_url")
+    reference = data.get("reference")
+    if not auth_url or not reference:
+        raise HTTPException(status_code=400, detail="Invalid Paystack response")
+
+    # Record pending transaction
+    with Session(engine) as session:
+        tx = Transaction(
+            order_id=reference,
+            payer_id=email,
+            amount=str(PAYSTACK_AMOUNT_KOBO / 100),
+            currency=PAYSTACK_CURRENCY,
+            status="initialized",
+            user_id=current_user.id,
+        )
+        session.add(tx)
+        session.commit()
+
+    return {"authorization_url": auth_url, "reference": reference}
+
+
+@app.get("/paystack/callback")
+async def paystack_callback(reference: str = Query(...)):
+    try:
+        verify_res = await paystack_verify_transaction(reference)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Verification failed: {e}")
+
+    data = verify_res.get("data", {}) if isinstance(verify_res, dict) else {}
+    status_val = data.get("status")
+    amount_kobo = data.get("amount")
+    currency = data.get("currency")
+    email = (data.get("customer") or {}).get("email")
+    metadata = data.get("metadata") or {}
+    user_id = metadata.get("user_id")
+
+    with Session(engine) as session:
+        tx = Transaction(
+            order_id=reference,
+            payer_id=email,
+            amount=str(amount_kobo / 100) if amount_kobo else None,
+            currency=currency,
+            status=status_val,
+            user_id=user_id,
+        )
+        session.add(tx)
+        if status_val == "success" and user_id:
+            u = session.get(User, user_id)
+            if u:
+                u.is_premium = True
+                session.add(u)
+        session.commit()
+
+    redirect_target = "/premium/dashboard" if status_val == "success" else "/premium/subscribe?error=Payment+failed"
+    return RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/auth/{provider}")
 async def oauth_login(request: Request, provider: str):
     client = oauth.create_client(provider)
     if not client:
-        raise HTTPException(status_code=404, detail="Unknown provider")
+        # Redirect back to login with a helpful message instead of 404
+        msg = "OAuth provider not configured. Set environment variables and restart."
+        return RedirectResponse(
+            url=str(request.url_for("login")) + f"?error={msg}",
+            status_code=status.HTTP_302_FOUND,
+        )
     redirect_uri = request.url_for("oauth_callback", provider=provider)
     return await client.authorize_redirect(request, str(redirect_uri))
 
@@ -1149,7 +1265,11 @@ async def oauth_login(request: Request, provider: str):
 async def oauth_callback(request: Request, provider: str):
     client = oauth.create_client(provider)
     if not client:
-        raise HTTPException(status_code=404, detail="Unknown provider")
+        msg = "OAuth provider not configured. Set environment variables and restart."
+        return RedirectResponse(
+            url=str(request.url_for("login")) + f"?error={msg}",
+            status_code=status.HTTP_302_FOUND,
+        )
     token = await client.authorize_access_token(request)
     profile = None
     if provider == "google":
@@ -1170,12 +1290,52 @@ async def oauth_callback(request: Request, provider: str):
                 if e.get("primary"):
                     profile["email"] = e.get("email")
                     break
+    elif provider == "linkedin":
+        # LinkedIn requires two calls: basic profile and email
+        # Basic profile
+        prof_resp = await client.get(
+            "me",
+            token=token,
+            params={"projection": "(id,localizedFirstName,localizedLastName)"},
+        )
+        prof_data = prof_resp.json() if prof_resp.ok else {}
+
+        email_resp = await client.get(
+            "emailAddress",
+            token=token,
+            params={"q": "members", "projection": "(elements*(handle~))"},
+        )
+        email_data = email_resp.json() if email_resp.ok else {}
+
+        email_elements = email_data.get("elements", []) if isinstance(email_data, dict) else []
+        primary_email = None
+        for e in email_elements:
+            handle = e.get("handle~") or {}
+            if handle.get("emailAddress"):
+                primary_email = handle.get("emailAddress")
+                break
+
+        full_name = " ".join(
+            part
+            for part in [
+                prof_data.get("localizedFirstName"),
+                prof_data.get("localizedLastName"),
+            ]
+            if part
+        ).strip()
+
+        profile = {
+            "email": primary_email,
+            "name": full_name or prof_data.get("id"),
+            "id": prof_data.get("id"),
+        }
 
     if not profile:
         raise HTTPException(status_code=400, detail="Failed to fetch user profile")
 
     email = profile.get("email") or profile.get("login")
-    username = profile.get("name") or profile.get("login") or email.split("@")[0]
+    username_source = profile.get("name") or profile.get("login")
+    username = username_source or (email.split("@", 1)[0] if email else profile.get("id"))
 
     with Session(engine) as session:
         user = (
