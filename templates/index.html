@@ -175,7 +175,7 @@
               <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src='{{ (pres.cover_url or request.url_for('static', path='slide-placeholder.svg')) }}'" style="width:100%;height:100%;object-fit:cover;" />
             {% endif %}
             <div class="card__bookmark" data-id="{{ pres.id }}" title="Save">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4-7 4V3a1 1 0 0 1 1-1z"/></svg>
             </div>
           </div>
           <div class="card__body">
@@ -183,18 +183,21 @@
             <p class="muted">by {% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
           </div>
         </a>
-        <div class="card__actions">
+            <div class="card__actions">
           {% set cu = current_user if current_user else None %}
           {% if pres.owner_id %}
-            <button class="btn btn--ghost btn-contact" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username }}" data-email="{{ pres.owner_email }}">Contact Owner</button>
+            <button class="btn btn--ghost btn-contact" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username }}" data-email="{{ pres.owner_email }}">
+              <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M21 8a2 2 0 0 0-2-2h-1V5a3 3 0 0 0-3-3H9A3 3 0 0 0 6 5v1H5a2 2 0 0 0-2 2v2h18V8zM3 12v6a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-6H3z"/></svg>
+              Contact
+            </button>
             {% if current_user and current_user.id != pres.owner_id %}
               {% if pres.is_following %}
                 <form class="follow-form" data-owner-id="{{ pres.owner_id }}" method="post" action="/users/{{ pres.owner_id }}/unfollow" style="display:inline">
-                  <button class="btn btn--ghost btn-follow">Unsubscribe</button>
+                  <button class="btn btn--ghost btn-follow"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 12h14v2H5z"/></svg>Unsubscribe</button>
                 </form>
               {% else %}
                 <form class="follow-form" data-owner-id="{{ pres.owner_id }}" method="post" action="/users/{{ pres.owner_id }}/follow" style="display:inline">
-                  <button class="btn btn--ghost btn-follow">Subscribe</button>
+                  <button class="btn btn--ghost btn-follow"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14"/></svg>Subscribe</button>
                 </form>
               {% endif %}
               <span class="muted followers-count" data-owner-id="{{ pres.owner_id }}" style="margin-left:8px; font-size:13px;">{{ pres.followers_count or 0 }} followers</span>
@@ -204,11 +207,18 @@
               </form>
             {% endif %}
           {% elif pres.owner_email %}
-            <button class="btn btn--ghost btn-contact" data-user-id="" data-username="" data-email="{{ pres.owner_email }}">Contact Owner</button>
+            <button class="btn btn--ghost btn-contact" data-user-id="" data-username="" data-email="{{ pres.owner_email }}">
+              <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 8a2 2 0 0 0-2-2h-1V5a3 3 0 0 0-3-3H9A3 3 0 0 0 6 5v1H5a2 2 0 0 0-2 2v2h18V8zM3 12v6a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-6H3z"/></svg>
+              Contact
+            </button>
           {% endif %}
-          <button class="btn btn--ghost btn-share" data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-filename="{{ pres.filename }}">Share</button>
+          <button class="btn btn--ghost btn-share" data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-filename="{{ pres.filename }}">
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/></svg>
+            Share
+          </button>
           {% if pres.owner_id and current_user and pres.owner_id != current_user.id %}
           <button class="btn btn--ghost btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username }}">
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             Message <span class="msg-badge" data-user-id="{{ pres.owner_id }}" style="margin-left:6px;display:inline-block"></span>
             <span class="presence-dot" data-user-id="{{ pres.owner_id }}" style="margin-left:6px;display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc"></span>
           </button>
