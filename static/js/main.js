@@ -2,9 +2,40 @@
 // Track created blob URLs so we can clean them up on unload
 const pdfBlobUrls = [];
 
+// Toast helper: non-blocking, non-disabling UI feedback
+function showToast(message, type = 'info', timeout = 4000) {
+  try {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'toast toast--' + type;
+    el.style.pointerEvents = 'auto';
+    el.style.background = type === 'error' ? '#ffefef' : type === 'success' ? '#eefaf0' : '#fff';
+    el.style.border = '1px solid ' + (type === 'error' ? '#f5c2c2' : type === 'success' ? '#cfe9d8' : '#ddd');
+    el.style.color = '#111';
+    el.style.padding = '10px 14px';
+    el.style.borderRadius = '8px';
+    el.style.boxShadow = '0 6px 18px rgba(20,20,30,0.06)';
+    el.style.maxWidth = '320px';
+    el.style.fontSize = '13px';
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 180ms ease, transform 220ms ease';
+    el.textContent = message;
+    container.appendChild(el);
+    // entrance
+    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+    // auto remove
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(6px)';
+      setTimeout(() => { try { container.removeChild(el); } catch (e) {} }, 220);
+    }, timeout);
+  } catch (e) { /* swallow */ }
+}
+
 // pdf.js worker configuration (shared across pages)
 if (window.pdfjsLib) {
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/js/pdf.worker.min.js";
   window.pdfjsLib.disableWorker = false;
 }
 
@@ -33,6 +64,8 @@ if (window.pdfjsLib) {
 document.addEventListener("submit", function () {
   // keep default behavior; extend as needed
 });
+
+// (promo slider removed) static cards handled by CSS
 
 // Preview modal: fetch PDF, render first page to canvas, fallback to object, use blob URLs to avoid download prompts
 document.addEventListener("DOMContentLoaded", () => {
@@ -232,6 +265,60 @@ window.addEventListener("beforeunload", () => {
   pdfBlobUrls.forEach((url) => URL.revokeObjectURL(url));
 });
 
+// Bookmark toggle: fetch user's bookmarks and wire up bookmark buttons
+document.addEventListener("DOMContentLoaded", () => {
+  const markBookmarked = (ids) => {
+    document.querySelectorAll('.card__bookmark[data-id]').forEach(el => {
+      const id = el.getAttribute('data-id');
+      if (!id) return;
+      if (ids.includes(Number(id)) || ids.includes(id)) el.classList.add('bookmarked');
+      else el.classList.remove('bookmarked');
+    });
+  };
+
+  const fetchBookmarks = async () => {
+    try {
+      const res = await fetch('/api/bookmarks');
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.bookmarks || [];
+    } catch (e) { return []; }
+  };
+
+  // initial mark
+  (async () => {
+    const ids = await fetchBookmarks();
+    markBookmarked(ids || []);
+  })();
+
+  // click handler (delegation)
+  document.body.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.card__bookmark');
+    if (!btn) return;
+    e.preventDefault();
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    // optimistic UI
+    const was = btn.classList.contains('bookmarked');
+    btn.classList.toggle('bookmarked');
+    try {
+      const res = await fetch(`/api/presentations/${id}/bookmark`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+      if (!res.ok) {
+        btn.classList.toggle('bookmarked', was);
+        const err = await res.json().catch(()=>({detail:'error'}));
+        showToast(err.detail || 'Bookmark failed', 'error');
+        return;
+      }
+      const data = await res.json();
+      btn.classList.toggle('bookmarked', !!data.bookmarked);
+      showToast(data.bookmarked ? 'Saved' : 'Removed', data.bookmarked ? 'success' : 'info');
+    } catch (err) {
+      btn.classList.toggle('bookmarked', was);
+      showToast('Network error', 'error');
+    }
+  });
+});
+
 // Profile dropdown toggle (global, class-based state)
 document.addEventListener("DOMContentLoaded", () => {
   const triggers = document.querySelectorAll(".profile-trigger");
@@ -417,4 +504,305 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
+});
+
+// Follow/unfollow AJAX handling and Contact modal handling
+document.addEventListener("DOMContentLoaded", () => {
+  // delegate submit on follow forms (non-blocking UI: show toasts instead of disabling)
+  document.addEventListener("submit", async (e) => {
+    const form = e.target.closest && e.target.closest('.follow-form') || (e.target.classList && e.target.classList.contains('follow-form') ? e.target : null);
+    if (!form) return;
+    e.preventDefault();
+    const action = form.getAttribute('action');
+    const ownerId = form.getAttribute('data-owner-id');
+    const btn = form.querySelector('.btn-follow');
+    try {
+      showToast('Working…', 'info', 2000);
+      const res = await fetch(action, { method: 'POST', credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error('Request failed');
+      const data = await res.json();
+      const followersEl = document.querySelector('.followers-count[data-owner-id="' + ownerId + '"]');
+      if (data.following === true) {
+        form.setAttribute('action', `/users/${ownerId}/unfollow`);
+        if (btn) btn.textContent = 'Unsubscribe';
+        showToast('Subscribed', 'success');
+      } else if (data.following === false) {
+        form.setAttribute('action', `/users/${ownerId}/follow`);
+        if (btn) btn.textContent = 'Subscribe';
+        showToast('Unsubscribed', 'success');
+      }
+      if (typeof data.followers_count !== 'undefined' && followersEl) {
+        followersEl.textContent = data.followers_count + ' followers';
+      }
+    } catch (err) {
+      console.error('Follow action failed', err);
+      showToast('Action failed', 'error');
+      // fallback: submit normally
+      try { form.submit(); } catch (e) {}
+    }
+  });
+
+  // Contact modal handling
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest && ev.target.closest('.btn-contact');
+    if (!btn) return;
+    ev.preventDefault();
+    const ownerId = btn.getAttribute('data-user-id');
+    const ownerEmail = btn.getAttribute('data-email') || '';
+    const ownerName = btn.getAttribute('data-username') || '';
+    const current = document.getElementById('current-user');
+    const isSignedIn = current && current.getAttribute('data-my-id');
+    if (!isSignedIn) {
+      // show signin modal
+      const signin = document.getElementById('signin-modal');
+      if (signin) {
+        const mailto = document.getElementById('signin-mailto');
+        if (mailto) mailto.setAttribute('href', ownerEmail ? ('mailto:' + encodeURIComponent(ownerEmail)) : '#');
+        signin.style.display = 'block';
+      }
+      return;
+    }
+
+    // signed-in: open contact modal
+    const modal = document.getElementById('contact-modal');
+    if (!modal) return;
+    const nameInput = document.getElementById('contact-name');
+    const emailInput = document.getElementById('contact-email');
+    const ownerIdInput = document.getElementById('contact-owner-id');
+    const msgInput = document.getElementById('contact-message');
+    // prefill with current user info when available
+    const cu = document.getElementById('current-user');
+    const myId = cu ? cu.getAttribute('data-my-id') : null;
+    // Try to prefill from server-rendered profile menu if present
+    const profileEmail = document.querySelector('.profile-menu__email') ? document.querySelector('.profile-menu__email').textContent.trim() : '';
+    const profileName = document.querySelector('.profile-menu__name') ? document.querySelector('.profile-menu__name').textContent.trim() : '';
+    if (nameInput) nameInput.value = profileName || '';
+    if (emailInput) emailInput.value = profileEmail || '';
+    if (ownerIdInput) ownerIdInput.value = ownerId || '';
+    if (msgInput) msgInput.value = `Hi ${ownerName || ''},\n\nI am interested in your presentation.`;
+    modal.style.display = 'block';
+  });
+
+  // Inline slideshow / PDF-first rendering for cards
+  (async function cardPreviews(){
+    const cards = Array.from(document.querySelectorAll('.card[data-pid], .featured-card[data-pid]'));
+    if (!cards.length) return;
+    const intervals = [];
+
+    for (const card of cards){
+      const pid = card.getAttribute('data-pid');
+      const thumbEl = card.querySelector('.card__thumb');
+      if (!pid || !thumbEl) continue;
+
+      try{
+        const res = await fetch(`/presentations/${pid}/thumbnails`);
+        const data = await res.json();
+        const thumbs = data.thumbnails || [];
+        if (thumbs && thumbs.length){
+          // build inline slideshow
+          thumbEl.innerHTML = '';
+          const img = document.createElement('img');
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'cover';
+          img.src = thumbs[0];
+          thumbEl.appendChild(img);
+          let idx = 0;
+          const iv = setInterval(() => {
+            idx = (idx + 1) % thumbs.length;
+            img.src = thumbs[idx];
+          }, 2800);
+          intervals.push(iv);
+          continue;
+        }
+
+        // No static thumbnails — try PDF viewer URL via preview API
+        const pv = await fetch(`/api/presentations/${pid}/preview`);
+        if (!pv.ok) continue;
+        const pData = await pv.json();
+        if (pData.viewer_url && window.pdfjsLib){
+          // render first page into canvas inside thumbEl
+          thumbEl.innerHTML = '';
+          const canvas = document.createElement('canvas');
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          canvas.style.display = 'block';
+          thumbEl.appendChild(canvas);
+          try{
+            const loadingTask = window.pdfjsLib.getDocument({ url: pData.viewer_url.split('#')[0] });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 1 });
+            const boxWidth = thumbEl.clientWidth || viewport.width;
+            const scale = Math.min((boxWidth / viewport.width) * 1.4, 2.0);
+            const scaled = page.getViewport({ scale: scale > 0 ? scale : 1 });
+            const ctx = canvas.getContext('2d');
+            canvas.width = scaled.width;
+            canvas.height = scaled.height;
+            await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+          }catch(e){
+            // fallback: leave placeholder image if any
+          }
+        }
+      }catch(e){
+        // ignore per-card errors
+      }
+    }
+
+    // cleanup intervals on unload
+    window.addEventListener('beforeunload', () => { intervals.forEach(iv => clearInterval(iv)); });
+  })();
+
+  // Contact modal cancel/close
+  document.getElementById('contact-close')?.addEventListener('click', () => { document.getElementById('contact-modal').style.display = 'none'; });
+  document.getElementById('contact-cancel')?.addEventListener('click', () => { document.getElementById('contact-modal').style.display = 'none'; });
+
+  // Submit contact form via AJAX
+  const contactForm = document.getElementById('contact-form');
+  if (contactForm) {
+    contactForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = document.getElementById('contact-status');
+      status.style.display = 'none';
+      const fd = new FormData(contactForm);
+      try {
+        showToast('Sending message…', 'info', 2500);
+        const res = await fetch('/contact', { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        if (data && data.success) {
+          status.textContent = 'Message sent. Thank you.';
+          status.style.display = 'block';
+          showToast('Message sent', 'success');
+          setTimeout(() => { document.getElementById('contact-modal').style.display = 'none'; }, 900);
+        } else {
+          status.textContent = 'Failed to send message.';
+          status.style.display = 'block';
+          showToast('Send failed', 'error');
+        }
+      } catch (err) {
+        status.textContent = 'Failed to send message.';
+        status.style.display = 'block';
+        showToast('Send failed', 'error');
+      }
+    });
+  }
+
+});
+
+// Simple carousel controls for elements with id 'featured-track'
+document.addEventListener('DOMContentLoaded', function(){
+  const track = document.getElementById('featured-track');
+  const prev = document.getElementById('featured-prev');
+  const next = document.getElementById('featured-next');
+  if (!track) return;
+
+  const cardWidth = (() => {
+    const first = track.querySelector('.featured-card');
+    if (!first) return 300;
+    return Math.max(first.getBoundingClientRect().width, 260);
+  })();
+
+  prev?.addEventListener('click', function(e){
+    e.preventDefault();
+    track.scrollBy({ left: - (cardWidth + 12), behavior: 'smooth' });
+  });
+  next?.addEventListener('click', function(e){
+    e.preventDefault();
+    track.scrollBy({ left: (cardWidth + 12), behavior: 'smooth' });
+  });
+
+  // allow keyboard navigation when focused
+  [prev, next].forEach(btn => btn && btn.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') btn.click();
+  }));
+});
+
+// Hamburger menu toggle for categories
+document.addEventListener('DOMContentLoaded', function(){
+  const btn = document.getElementById('hamburger');
+  const menu = document.getElementById('hamburger-menu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', function(){
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!expanded));
+    if (expanded) {
+      menu.style.display = 'none';
+      menu.setAttribute('aria-hidden', 'true');
+    } else {
+      menu.style.display = 'block';
+      menu.setAttribute('aria-hidden', 'false');
+    }
+  });
+  // close when clicking outside
+  document.addEventListener('click', function(ev){
+    if (!menu.contains(ev.target) && !btn.contains(ev.target)){
+      menu.style.display = 'none';
+      menu.setAttribute('aria-hidden','true');
+      btn.setAttribute('aria-expanded','false');
+    }
+  });
+});
+
+// Hover preview: fetch up to 4 thumbnails and show a popup
+document.addEventListener('DOMContentLoaded', function(){
+  let previewPopup = null;
+  function ensurePopup(){
+    if (!previewPopup){
+      previewPopup = document.createElement('div');
+      previewPopup.className = 'preview-popup';
+      previewPopup.style.position = 'absolute';
+      previewPopup.style.display = 'none';
+      previewPopup.style.zIndex = 1000;
+      previewPopup.style.background = '#fff';
+      previewPopup.style.border = '1px solid rgba(0,0,0,0.08)';
+      previewPopup.style.borderRadius = '8px';
+      previewPopup.style.boxShadow = '0 12px 30px rgba(16,24,40,0.12)';
+      previewPopup.style.padding = '8px';
+      previewPopup.style.maxWidth = '420px';
+      previewPopup.style.pointerEvents = 'none';
+      document.body.appendChild(previewPopup);
+    }
+  }
+
+  async function showPreview(pid, rect){
+    ensurePopup();
+    previewPopup.innerHTML = '<div style="padding:6px;color:#666">Loading preview…</div>';
+    previewPopup.style.display = 'block';
+    previewPopup.style.left = (rect.right + 8) + 'px';
+    previewPopup.style.top = (rect.top) + 'px';
+    try{
+      const res = await fetch(`/presentations/${pid}/thumbnails`);
+      if (!res.ok) throw new Error('no thumbs');
+      const data = await res.json();
+      const urls = data.thumbnails || [];
+      if (!urls.length){
+        previewPopup.innerHTML = '<div style="padding:8px;color:#666">Preview not available</div>';
+        return;
+      }
+      // show up to 4 thumbnails
+      const items = urls.slice(0,4).map(u => `<img src="${u}" style="width:100px;height:72px;object-fit:cover;border-radius:6px;margin:4px;border:1px solid rgba(0,0,0,0.04)"/>`).join('');
+      previewPopup.innerHTML = `<div style="display:flex;gap:6px;">${items}</div>`;
+    }catch(e){
+      previewPopup.innerHTML = '<div style="padding:8px;color:#666">Preview unavailable</div>';
+    }
+  }
+
+  function hidePreview(){
+    if (previewPopup) previewPopup.style.display = 'none';
+  }
+
+  document.querySelectorAll('.card[data-pid], .featured-card[data-pid]').forEach(el => {
+    let timer = null;
+    el.addEventListener('mouseenter', (ev) => {
+      const pid = el.getAttribute('data-pid');
+      if (!pid) return;
+      const rect = el.getBoundingClientRect();
+      timer = setTimeout(() => { showPreview(pid, rect); }, 350);
+    });
+    el.addEventListener('mouseleave', () => { if (timer) clearTimeout(timer); hidePreview(); });
+  });
+
+  // Hide when clicking anywhere
+  document.addEventListener('scroll', hidePreview, true);
 });

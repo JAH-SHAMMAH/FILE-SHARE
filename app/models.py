@@ -1,6 +1,6 @@
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship
-from datetime import datetime
+from datetime import datetime, date
 
 
 class User(SQLModel, table=True):
@@ -11,6 +11,7 @@ class User(SQLModel, table=True):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None
+    date_of_birth: Optional[date] = None
     is_premium: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -110,4 +111,20 @@ class Activity(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     verb: Optional[str] = None
     target_id: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Message(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sender_id: int = Field(foreign_key="user.id")
+    recipient_id: int = Field(foreign_key="user.id")
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    read: bool = False
+
+
+class Bookmark(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    presentation_id: int = Field(foreign_key="presentation.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
