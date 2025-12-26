@@ -1,0 +1,7 @@
+# Local SQLite DB used for development/testing
+db.sqlite
+SLIDESHARE/db.sqlite
+*.sqlite3
+
+# Python virtualenv
+.venv/
