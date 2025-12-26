@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 {% block head %}
-  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+  <style>
+    .uploads-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .uploads-tabs { display:flex; gap:8px; align-items:center; }
+    .hamburger { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid rgba(0,0,0,0.06); background:white; cursor:pointer; }
+    .gallery-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+    .gallery-card { background:#fff; border:1px solid rgba(0,0,0,0.04); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+    .gallery-card .gallery-meta { padding:10px; display:flex; gap:8px; align-items:center; }
+    .thumb-frame, img.thumb { width:100%; height:140px; object-fit:cover; display:block; }
+  </style>
 {% endblock %}
 
-{% block scripts %}
-  <script>
-    if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
-      window.pdfjsLib.disableWorker = false;
-    }
-  </script>
 {% endblock %}
 
 {% block content %}
@@ -19,6 +20,113 @@
   <h1 class="upload-title">Let’s get your document ready for the spotlight.</h1>
   <p class="muted">The details on this page help your documents be easily found.</p>
 </section>
+
+{% if uploads is defined %}
+<div class="uploads-nav">
+  <div class="uploads-tabs">
+    <button class="hamburger" id="hamburger" aria-label="Open menu">☰</button>
+    <a class="btn btn--ghost" href="/">Community uploads</a>
+    <a class="btn" id="my-uploads-link" href="/upload?scope=mine">My uploads</a>
+  </div>
+  <div class="muted">Showing: <span id="uploads-scope-label">My uploads</span></div>
+</div>
+<section class="content-card" style="margin-top:12px;">
+  <h3 style="margin:0 0 10px 0;">Your uploads <span class="muted" style="font-size:14px; font-weight:600;">({{ total_uploads or 0 }})</span></h3>
+
+  <form method="get" class="meta-grid" style="gap:8px; align-items:center; margin-bottom:12px;">
+    <label class="field" style="margin:0;">
+      <input name="q" placeholder="Search your uploads" value="{{ q or '' }}" />
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="category">
+        <option value="">All categories</option>
+        {% for c in categories %}
+        <option value="{{ c.name }}" {% if category == c.name %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="sort">
+        <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest</option>
+        <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Oldest</option>
+      </select>
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="per_page">
+        <option value="6" {% if per_page == 6 %}selected{% endif %}>6</option>
+        <option value="12" {% if per_page == 12 %}selected{% endif %}>12</option>
+        <option value="24" {% if per_page == 24 %}selected{% endif %}>24</option>
+      </select>
+    </label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn" type="submit">Filter</button>
+      <a class="btn btn--ghost" href="{{ request.url_for('upload') }}">Reset</a>
+    </div>
+  </form>
+
+  <div class="gallery-grid" style="margin-top:10px;">
+    {% if uploads|length == 0 %}
+      <div class="muted">You have no uploads matching these filters.</div>
+    {% endif %}
+    {% for p in uploads %}
+    {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+    {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+    {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+    {% set cover_or_pdf = p.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+    <div class="gallery-card">
+      <div style="height:140px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(14,165,233,0.06), rgba(249,115,22,0.04));">
+        {% if is_pdf %}
+        <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url or '' }}" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+          <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
+          <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
+        </div>
+        {% else %}
+        <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" style="max-width:100%;max-height:100%;object-fit:cover;" />
+        {% endif %}
+      </div>
+      <div class="gallery-meta">
+        <div style="flex:1">
+          <div style="font-weight:700">{{ p.title }}</div>
+          <div class="muted" style="font-size:13px;">{{ p.created_at.strftime('%Y-%m-%d') }} • {{ p.mimetype or 'file' }}</div>
+          {% if p.owner_username %}
+          <div style="font-size:13px; margin-top:6px;">
+            by <a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>
+          </div>
+          {% endif %}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">View</a>
+          <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
+          {% if p.owner_id %}
+            <button class="btn btn--ghost btn-contact" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}" data-email="{{ p.owner_email if p.owner_email is defined else '' }}">Contact Owner</button>
+            <button class="btn btn--ghost btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}">Message</button>
+            {% if current_user and current_user.id != p.owner_id %}
+            <form class="follow-form" data-owner-id="{{ p.owner_id }}" method="post" action="/users/{{ p.owner_id }}/follow" style="display:inline">
+              <button class="btn btn--ghost btn-follow">Subscribe</button>
+            </form>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% set last_page = (total_uploads // per_page) + (1 if total_uploads % per_page else 0) %}
+  {% if last_page > 1 %}
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+    {% if page > 1 %}
+      <a class="btn btn--ghost" href="?page={{ page-1 }}&per_page={{ per_page }}&category={{ category or '' }}&q={{ q or '' }}&sort={{ sort }}">Previous</a>
+    {% endif %}
+    <div class="muted">Page {{ page }} of {{ last_page }}</div>
+    {% if page < last_page %}
+      <a class="btn" href="?page={{ page+1 }}&per_page={{ per_page }}&category={{ category or '' }}&q={{ q or '' }}&sort={{ sort }}">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</section>
+{% endif %}
 
 <section class="upload-shell upload-shell--slim" id="upload-form">
   <form method="post" enctype="multipart/form-data" class="upload-layout upload-form" id="upload-form-el">
@@ -134,5 +242,17 @@
     </div>
   </form>
 </section>
+
+<script>
+  // Small UI helpers for upload page
+  (function(){
+    const ham = document.getElementById('hamburger');
+    if (ham) ham.addEventListener('click', ()=>{ alert('Menu:\n- Profile\n- Settings\n- Sign out'); });
+    const params = new URLSearchParams(location.search);
+    const scope = params.get('scope') || 'mine';
+    const label = document.getElementById('uploads-scope-label');
+    if (label) label.textContent = scope === 'community' ? 'Community uploads' : 'My uploads';
+  })();
+</script>
 
 {% endblock %}

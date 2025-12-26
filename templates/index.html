@@ -103,7 +103,7 @@
             </div>
             <div class="card__body">
               <h4>{{ p.title }}</h4>
-              <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views</p>
+                <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></p>
             </div>
           </a>
           <div class="card__actions">
@@ -147,7 +147,7 @@
           </div>
           <div class="card__body">
             <h4>{{ m.title }}</h4>
-            <p class="muted">by {% if m.owner_username %}<a href="/users/{{ m.owner_username }}">{{ m.owner_username }}</a>{% else %}{{ m.author or 'Unknown' }}{% endif %} · {{ m.views or 0 }} views</p>
+            <p class="muted">by {% if m.owner_username %}<a href="/users/{{ m.owner_username }}">{{ m.owner_username }}</a>{% else %}{{ m.author or 'Unknown' }}{% endif %} · {{ m.views or 0 }} views <span class="card__saved" data-id="{{ m.id }}">⭐ {{ m.bookmarks_count or 0 }}</span></p>
           </div>
         </a>
       </article>
@@ -177,6 +177,7 @@
             <div class="card__bookmark" data-id="{{ pres.id }}" title="Save">
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4-7 4V3a1 1 0 0 1 1-1z"/></svg>
             </div>
+            <div class="card__bookmark-count" data-id="{{ pres.id }}" title="Saved count" data-empty="{{ (pres.bookmarks_count or 0) == 0 }}">{{ pres.bookmarks_count or 0 }}</div>
           </div>
           <div class="card__body">
             <h4>{{ pres.title }}</h4>

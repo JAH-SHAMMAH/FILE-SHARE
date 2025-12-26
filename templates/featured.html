@@ -51,7 +51,7 @@
           </div>
           <div class="card__body">
             <h4>{{ p.title }}</h4>
-            <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views</p>
+            <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></p>
           </div>
         </a>
         <div class="card__actions">

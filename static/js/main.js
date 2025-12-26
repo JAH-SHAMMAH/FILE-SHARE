@@ -318,6 +318,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof data.count !== 'undefined') {
           const bc = document.getElementById('bookmark-count');
           if (bc) bc.textContent = String(data.count || 0);
+          // update any listing badges for this presentation
+          try {
+            document.querySelectorAll('.card__bookmark-count[data-id]').forEach(el => {
+              if (el.getAttribute('data-id') === String(id)) {
+                el.textContent = String(data.count || 0);
+                el.setAttribute('data-empty', String((data.count || 0) === 0));
+              }
+            });
+            // also update inline saved indicators
+            document.querySelectorAll('.card__saved[data-id]').forEach(el => {
+              if (el.getAttribute('data-id') === String(id)) {
+                el.textContent = '⭐ ' + String(data.count || 0);
+              }
+            });
+          } catch (e) {}
         }
       } catch (e) {}
       showToast(data.bookmarked ? 'Saved' : 'Removed', data.bookmarked ? 'success' : 'info');

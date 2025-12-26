@@ -1,0 +1,48 @@
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="{{ url_for('index') }}" class="brand">FILE-SHARE</a>
+    <form class="header-search" action="{{ url_for('search') }}" method="get">
+      <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
+      <button type="submit">Search</button>
+    </form>
+    <nav class="header-nav">
+      {% set cu = request.state.current_user if request and request.state else None %}
+      {% if cu %}
+        <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
+        {% if cu.is_premium %}
+        <a class="nav-link" href="{{ url_for('premium_dashboard') }}">Premium</a>
+        {% else %}
+        <a class="nav-link" href="{{ url_for('premium_subscribe') }}">Go Premium</a>
+        {% endif %}
+        <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
+          <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="profile-menu">
+          <div class="profile-menu__head">
+            <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
+            <div>
+              <div class="profile-menu__name">{{ cu.username }}</div>
+              <div class="profile-menu__email">{{ cu.email or '' }}</div>
+            </div>
+          </div>
+          <a class="profile-menu__item" href="{{ url_for('profile_view', username=cu.username) }}">View Profile</a>
+          <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
+          {% if cu.is_premium %}
+          <a class="profile-menu__item" href="{{ url_for('premium_dashboard') }}">Premium Dashboard</a>
+          {% else %}
+          <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
+          {% endif %}
+          <a class="profile-menu__item" href="#settings">Account Settings</a>
+          <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
+          <div class="profile-menu__divider"></div>
+          <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      {% else %}
+        <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+        <a class="nav-link btn" href="{{ url_for('register') }}">Sign up</a>
+      {% endif %}
+      <button id="theme-toggle" aria-label="Toggle theme" class="icon-btn">🌓</button>
+    </nav>
+  </div>
+</header>

@@ -9,54 +9,55 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
   <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="site-header">
     <div class="container header-inner">
-      <a href="{{ url_for('index') }}" class="brand">FILE-SHARE</a>
+      <div class="header-left" style="display:flex;align-items:center;gap:12px;">
+        <button id="hamburger" class="hamburger" aria-label="Open categories" aria-expanded="false">☰</button>
+        <a href="{{ url_for('index') }}" class="brand brand--with-logo">
+          <img src="{{ request.url_for('static', path='icons/logo.svg') }}" alt="logo" class="brand-mark" onerror="this.style.display='none'" />
+          <span class="brand-text">247FileShare</span>
+        </a>
+      </div>
+
       <form class="header-search" action="{{ url_for('search') }}" method="get">
-        <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
-        <button type="submit">Search</button>
+        <input name="q" placeholder="Search" value="{{ request.query_params.get('q', '') }}">
+        <button type="submit" aria-label="Search">🔍</button>
       </form>
+
       <nav class="header-nav">
-        {% set cu = request.state.current_user if request and request.state else None %}
-        {% if cu %}
-          <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
-          {% if cu.is_premium %}
-          <a class="nav-link" href="{{ url_for('premium_dashboard') }}">Premium</a>
+        <div class="nav-cta" style="display:flex;align-items:center;gap:10px;">
+          <a class="nav-link small" href="#" title="Language">🌐 EN</a>
+          <a class="nav-link" href="{{ url_for('featured') }}">Featured</a>
+          {% set cu = request.state.current_user if request and request.state else None %}
+          {% if cu %}
+            <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
           {% else %}
-          <a class="nav-link" href="{{ url_for('premium_subscribe') }}">Go Premium</a>
+            <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+            <a class="nav-link" href="{{ url_for('register') }}">Sign up</a>
           {% endif %}
+          <a class="nav-link btn" href="{{ url_for('premium_subscribe') }}">Download free for 30 days</a>
+        </div>
+
+        {% if request.state.current_user %}
           <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
-            <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
-            <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
           </button>
-          <div class="profile-menu">
-            <div class="profile-menu__head">
-              <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
-              <div>
-                <div class="profile-menu__name">{{ cu.username }}</div>
-                <div class="profile-menu__email">{{ cu.email or '' }}</div>
-              </div>
-            </div>
-            <a class="profile-menu__item" href="#saved">Saved</a>
-            <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
-            {% if cu.is_premium %}
-            <a class="profile-menu__item" href="{{ url_for('premium_dashboard') }}">Premium Dashboard</a>
-            {% else %}
-            <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
-            {% endif %}
-            <a class="profile-menu__item" href="#settings">Account Settings</a>
-            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
-            <div class="profile-menu__divider"></div>
-            <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
-          </div>
-        {% else %}
-          <a class="nav-link" href="{{ url_for('login') }}">Login</a>
-          <a class="nav-link btn" href="{{ url_for('register') }}">Sign up</a>
         {% endif %}
-        <button id="theme-toggle" aria-label="Toggle theme" class="icon-btn">🌓</button>
+
+        <div id="hamburger-menu" class="hamburger-menu" aria-hidden="true">
+          <div class="hamburger-menu__inner">
+            <h4>Categories</h4>
+            <ul>
+              {% for c in request.state.categories or [] %}
+                <li><a href="/search?category={{ c|url_encode }}">{{ c }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
       </nav>
     </div>
   </header>
@@ -90,6 +91,85 @@
   </footer>
 
   <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+  <script src="{{ request.url_for('static', path='js/chat.js') }}"></script>
+  <script src="{{ request.url_for('static', path='js/thumb-fallback.js') }}"></script>
+  {% if request.state.current_user %}
+  <!-- Floating chat launcher -->
+  <button id="chat-launcher" title="Open chat" class="chat-launcher">💬</button>
+
+  <!-- Global Chat modal -->
+  <div id="chat-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel">
+      <header class="chat-header">
+        <div class="chat-header__title">Chat with <span id="chat-username">Support</span></div>
+        <button id="chat-close" class="icon-btn">✕</button>
+      </header>
+      <div style="padding:10px;border-bottom:1px solid var(--border);">
+        <label for="chat-recipient" class="muted">Recipient user id (or leave blank to enter after):</label>
+        <input id="chat-recipient" type="text" placeholder="User id (e.g. 42)" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid var(--border);" />
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Write a message..." autocomplete="off" />
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  <!-- current user marker for client-side scripts -->
+  <div id="current-user" data-my-id="{{ request.state.current_user.id if request.state.current_user else '' }}" style="display:none"></div>
+
+  <!-- Sign-in prompt modal (shown to anonymous users when they click Contact Owner) -->
+  <div id="signin-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel">
+      <header class="chat-header">
+        <div class="chat-header__title">Sign in to message</div>
+        <button id="signin-close" class="icon-btn">✕</button>
+      </header>
+      <div style="padding:16px;">
+        <p class="muted">You need to sign in to use direct messaging. You can sign in or contact the owner by email.</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <a class="btn" id="signin-login" href="{{ url_for('login') }}">Sign in</a>
+          <a class="btn btn--ghost" id="signin-register" href="{{ url_for('register') }}">Register</a>
+          <a class="btn btn--ghost" id="signin-mailto" href="#">Contact by email</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Contact Owner modal for signed-in users -->
+  <div id="contact-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel">
+      <header class="chat-header">
+        <div class="chat-header__title">Contact owner</div>
+        <button id="contact-close" class="icon-btn">✕</button>
+      </header>
+      <div style="padding:16px;">
+        <form id="contact-form">
+          <input type="hidden" id="contact-owner-id" name="owner_id" value="" />
+          <input type="hidden" id="contact-owner-username" name="owner_username" value="" />
+          <label class="field">Your name
+            <input id="contact-name" name="name" required />
+          </label>
+          <label class="field">Your email
+            <input id="contact-email" name="email" type="email" required />
+          </label>
+          <label class="field">Message
+            <textarea id="contact-message" name="message" rows="6" required></textarea>
+          </label>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+            <button type="button" id="contact-cancel" class="btn btn--ghost">Cancel</button>
+            <button type="submit" class="btn">Send</button>
+          </div>
+          <div id="contact-status" class="muted" style="margin-top:8px; display:none;"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <!-- Toast container for UI feedback -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true" style="position:fixed;right:16px;bottom:18px;z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
   {% block scripts %}{% endblock %}
 </body>
 </html>

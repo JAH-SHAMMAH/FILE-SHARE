@@ -305,6 +305,19 @@ def index(request: Request, q: str = ""):
                     is_following=(oid in following_set) if oid else False,
                 )
             )
+        # attach bookmark counts for profile presentations
+        pres_ids = [p.id for p in presentations if getattr(p, 'id', None)]
+        if pres_ids:
+            rows = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(pres_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows}
+        else:
+            bc = {}
+        for p in presentations:
+            setattr(p, 'bookmarks_count', bc.get(getattr(p, 'id', None), 0))
         my_uploads = []
         my_upload_count = 0
         if current_user:
@@ -376,6 +389,40 @@ def index(request: Request, q: str = ""):
                 owner_email=getattr(owner, 'email', None) if owner else None,
                 views=getattr(p, 'views', 0),
             ))
+        # attach bookmark counts for any listing we will render (batch query to avoid N+1)
+        all_ids = set()
+        for item in presentations:
+            if getattr(item, 'id', None):
+                all_ids.add(item.id)
+        for item in most_viewed:
+            if getattr(item, 'id', None):
+                all_ids.add(item.id)
+        for item in featured:
+            if getattr(item, 'id', None):
+                all_ids.add(item.id)
+        for item in my_uploads:
+            if getattr(item, 'id', None):
+                all_ids.add(item.id)
+
+        if all_ids:
+            rows = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(all_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bookmark_counts = {int(r[0]): int(r[1]) for r in rows}
+        else:
+            bookmark_counts = {}
+
+        # set a default count of 0 where missing
+        for item in presentations:
+            setattr(item, 'bookmarks_count', bookmark_counts.get(getattr(item, 'id', None), 0))
+        for item in most_viewed:
+            setattr(item, 'bookmarks_count', bookmark_counts.get(getattr(item, 'id', None), 0))
+        for item in featured:
+            setattr(item, 'bookmarks_count', bookmark_counts.get(getattr(item, 'id', None), 0))
+        for item in my_uploads:
+            setattr(item, 'bookmarks_count', bookmark_counts.get(getattr(item, 'id', None), 0))
 
     return templates.TemplateResponse(
         "index.html",
@@ -444,6 +491,19 @@ def featured_page(request: Request):
                 views=getattr(p, 'views', 0),
             ))
         featured = featured[:12]
+        # attach bookmark counts for featured items
+        feat_ids = [f.id for f in featured if getattr(f, 'id', None)]
+        if feat_ids:
+            rows = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(feat_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows}
+        else:
+            bc = {}
+        for f in featured:
+            setattr(f, 'bookmarks_count', bc.get(getattr(f, 'id', None), 0))
 
     return templates.TemplateResponse("featured.html", {"request": request, "featured": featured, "current_user": current_user})
 
@@ -1874,7 +1934,37 @@ def search(request: Request, q: str = "", category: Optional[str] = Query(None))
                 # No Category row exists for this name – fall back to title matching
                 statement = statement.where(func.lower(Presentation.title).contains(category.lower()))
 
-        results = session.exec(statement).all()
+        results_raw = session.exec(statement).all()
+        results = []
+        for p in results_raw:
+            owner = getattr(p, 'owner', None)
+            results.append(SimpleNamespace(
+                id=p.id,
+                title=p.title,
+                description=getattr(p, 'description', None),
+                filename=p.filename,
+                mimetype=p.mimetype,
+                owner_id=p.owner_id,
+                owner_username=getattr(owner, 'username', None) if owner else None,
+                owner_email=getattr(owner, 'email', None) if owner else None,
+                views=getattr(p, 'views', None),
+                cover_url=getattr(p, 'cover_url', None) if hasattr(p, 'cover_url') else None,
+                created_at=getattr(p, 'created_at', None),
+            ))
+
+        # attach bookmark counts for results (batch)
+        res_ids = [r.id for r in results if getattr(r, 'id', None)]
+        if res_ids:
+            rows = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(res_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows}
+        else:
+            bc = {}
+        for r in results:
+            setattr(r, 'bookmarks_count', bc.get(getattr(r, 'id', None), 0))
 
     return templates.TemplateResponse(
         "search.html", {"request": request, "q": q, "results": results}
