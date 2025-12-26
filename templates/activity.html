@@ -10,7 +10,7 @@
         <div class="muted small">{{ item.activity.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
       </div>
       <div class="activity-right">
-        <div>{{ item.activity.verb }} {% if item.presentation %} on <a href="/presentations/{{ item.presentation.id }}">{{ item.presentation.title }}</a>{% endif %}</div>
+        <div>{{ item.activity.verb }} {% if item.presentation %} on <a href="/presentations/{{ item.presentation.id }}">{{ item.presentation.title }}</a> <span class="card__saved" data-id="{{ item.presentation.id }}">⭐ {{ item.presentation.bookmarks_count or 0 }}</span>{% endif %}</div>
       </div>
     </li>
     {% else %}

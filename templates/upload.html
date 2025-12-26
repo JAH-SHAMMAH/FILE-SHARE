@@ -88,6 +88,7 @@
         <div style="flex:1">
           <div style="font-weight:700">{{ p.title }}</div>
           <div class="muted" style="font-size:13px;">{{ p.created_at.strftime('%Y-%m-%d') }} • {{ p.mimetype or 'file' }}</div>
+          <div style="margin-top:6px; font-size:13px;">Saved: <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></div>
           {% if p.owner_username %}
           <div style="font-size:13px; margin-top:6px;">
             by <a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>

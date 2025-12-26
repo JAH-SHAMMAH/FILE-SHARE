@@ -788,7 +788,36 @@ def upload_get(
         total = len(all_matches)
         start = (max(page, 1) - 1) * per_page
         end = start + per_page
-        uploads = all_matches[start:end]
+        page_rows = all_matches[start:end]
+        uploads = []
+        for p in page_rows:
+            owner = getattr(p, 'owner', None)
+            uploads.append(SimpleNamespace(
+                id=p.id,
+                title=p.title,
+                description=getattr(p, 'description', None),
+                filename=p.filename,
+                mimetype=p.mimetype,
+                owner_id=p.owner_id,
+                owner_username=getattr(owner, 'username', None) if owner else None,
+                owner_email=getattr(owner, 'email', None) if owner else None,
+                views=getattr(p, 'views', None),
+                cover_url=getattr(p, 'cover_url', None) if hasattr(p, 'cover_url') else None,
+                created_at=getattr(p, 'created_at', None),
+            ))
+        # attach bookmark counts for uploads on this page
+        up_ids = [u.id for u in uploads if getattr(u, 'id', None)]
+        if up_ids:
+            rows_bc = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(up_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows_bc}
+        else:
+            bc = {}
+        for u in uploads:
+            setattr(u, 'bookmarks_count', bc.get(getattr(u, 'id', None), 0))
 
     return templates.TemplateResponse(
         "upload.html",
@@ -1862,9 +1891,31 @@ def premium_dashboard(request: Request, current_user: User = Depends(get_current
     if not current_user.is_premium:
         raise HTTPException(status_code=403, detail="Premium access only")
     with Session(engine) as session:
-        presentations = session.exec(
+        rows = session.exec(
             select(Presentation).where(Presentation.owner_id == current_user.id)
         ).all()
+        presentations = []
+        for p in rows:
+            presentations.append(SimpleNamespace(
+                id=p.id,
+                title=p.title,
+                views=getattr(p, 'views', 0),
+                created_at=getattr(p, 'created_at', None),
+            ))
+        # attach bookmark counts in batch
+        pres_ids = [p.id for p in presentations if getattr(p, 'id', None)]
+        if pres_ids:
+            rows_bc = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(pres_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows_bc}
+        else:
+            bc = {}
+        for p in presentations:
+            setattr(p, 'bookmarks_count', bc.get(getattr(p, 'id', None), 0))
+
         total_views = sum(p.views for p in presentations)
         total_presentations = len(presentations)
         txs = session.exec(
@@ -2073,7 +2124,23 @@ def activity_feed(request: Request, current_user: User = Depends(get_current_use
         for a in acts:
             user = session.get(User, a.user_id) if a.user_id else None
             pres = session.get(Presentation, a.target_id) if a.target_id else None
-            enriched.append({"activity": a, "user": user, "presentation": pres})
+            pres_safe = None
+            if pres:
+                pres_safe = SimpleNamespace(id=pres.id, title=pres.title)
+            enriched.append({"activity": a, "user": user, "presentation": pres_safe})
+        # attach bookmark counts for presentations referenced in activity
+        pres_ids = [it['presentation'].id for it in enriched if it.get('presentation')]
+        if pres_ids:
+            rows_bc = session.exec(
+                select(Bookmark.presentation_id, func.count(Bookmark.id))
+                .where(Bookmark.presentation_id.in_(list(pres_ids)))
+                .group_by(Bookmark.presentation_id)
+            ).all()
+            bc = {int(r[0]): int(r[1]) for r in rows_bc}
+            for it in enriched:
+                p = it.get('presentation')
+                if p:
+                    setattr(p, 'bookmarks_count', bc.get(getattr(p, 'id', None), 0))
     return templates.TemplateResponse(
         "activity.html", {"request": request, "items": enriched}
     )
