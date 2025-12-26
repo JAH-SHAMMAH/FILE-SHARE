@@ -3,61 +3,44 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FILE SHARE</title>
+  <title>247FILE SHARE</title>
+  <link rel="icon" href="{{ request.url_for('static', path='logo.svg') }}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
   <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
   <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
 </head>
 <body>
-  <header class="site-header">
-    <div class="container header-inner">
-      <div style="display:flex;align-items:center;gap:12px">
-        <a href="{{ url_for('index') }}" class="brand">FILE SHARE</a>
-        <nav class="header-nav--mini" style="display:flex;gap:8px;align-items:center">
-          <a class="nav-link" href="{{ url_for('about') }}">About</a>
-          <a class="nav-link" href="{{ url_for('help') }}">Help</a>
-          <a class="nav-link" href="{{ url_for('contact') }}">Contact</a>
-        </nav>
+  {% include '_header.html' %}
+
+  {% set cu = (current_user if (current_user is defined and current_user) else (request.state.current_user if request and request.state else None)) %}
+  {% if cu %}
+  <!-- Category chips (clickable) -->
+  {% set current_category = request.query_params.get('category', '') %}
+  <section class="container category-bar" style="margin-top:12px;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="suggested-chips">
+        {% set suggested = ['For You','Business','Mobile'] %}
+        {% for s in suggested %}
+          <a class="suggested-chip{% if s == (current_category or 'For You') %} active{% endif %}" href="/search?category={{ s|url_encode }}">{{ s }}</a>
+        {% endfor %}
       </div>
-      <form class="header-search" action="{{ url_for('search') }}" method="get">
-        <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
-        <button type="submit">Search</button>
-      </form>
-      <nav class="header-nav">
-        {% if current_user %}
-          {% set initials = (current_user.username or '??')[:2].upper() %}
-          <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
-          <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
-            <div class="avatar-badge">{{ initials }}</div>
-            <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <div class="profile-menu">
-            <div class="profile-menu__head">
-              <div class="avatar-badge">{{ initials }}</div>
-              <div>
-                <div class="profile-menu__name">{{ current_user.username }}</div>
-                <div class="profile-menu__email">{{ current_user.email or '' }}</div>
-              </div>
-            </div>
-            <a class="profile-menu__item" href="#saved">Saved</a>
-            <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
-            <a class="profile-menu__item" href="#analytics">Analytics</a>
-            <a class="profile-menu__item" href="#settings">Account Settings</a>
-            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
-            <div class="profile-menu__divider"></div>
-            <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
-          </div>
-        {% else %}
-          <a class="nav-link" href="{{ url_for('login') }}">Sign in</a>
-          <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
-        {% endif %}
-        <button id="theme-toggle" class="theme-toggle" type="button">Dark mode</button>
-      </nav>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div id="category-scroll" class="category-scroll" role="list">
+          {% for c in request.state.categories or [] %}
+            <a role="listitem" data-cat="{{ c }}" class="category-chip{% if c == current_category %} active{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
+          {% endfor %}
+        </div>
+        <a class="muted" href="/categories" style="font-weight:700;text-decoration:none;">Show all categories ▾</a>
+      </div>
     </div>
-  </header>
+  </section>
+
+  <script src="{{ request.url_for('static', path='js/categories.js') }}" defer></script>
+  {% endif %}
 
   {% if current_user %}
   <div class="signed-in-ribbon">
@@ -71,19 +54,214 @@
   </div>
   {% endif %}
 
-  <main class="page-shell">
+  {% if my_uploads and my_uploads|length > 0 %}
+  <section class="container" style="margin-top:18px;">
+    <h3>Your uploads <span class="muted" style="font-size:14px; font-weight:600;">({{ my_upload_count or (my_uploads|length) }})</span></h3>
+    <div class="gallery-grid" style="margin-top:10px;">
+      {% for p in my_uploads %}
+      <div class="gallery-card">
+        <div style="height:120px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(14,165,233,0.06), rgba(249,115,22,0.04));">
+          <div style="font-weight:800;">{{ p.title[:40] }}</div>
+        </div>
+        <div class="gallery-meta">
+          <div style="flex:1">
+            <div style="font-weight:700">{{ p.title }}</div>
+            <div class="muted" style="font-size:13px;">{{ p.created_at.strftime('%Y-%m-%d') }} • {{ p.mimetype or 'file' }}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">View</a>
+            <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  
+  {% if featured and featured|length > 0 %}
+  <section class="container" style="margin-top:18px;">
+    <div class="panel-head">
+      <h3 class="section-title">Featured presentations</h3>
+      <p class="muted">Curated and spotlighted decks — slide through the selection.</p>
+    </div>
+    <div class="featured-carousel">
+      <div class="featured-nav" style="left:8px;">
+        <button id="featured-prev" class="prev" aria-label="Scroll left">◀</button>
+      </div>
+      <div class="featured-track" id="featured-track" data-carousel>
+        {% for p in featured %}
+        <article class="featured-card card" data-pid="{{ p.id }}">
+          <a class="card__link" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
+            <div class="card__thumb">
+              {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+              {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+              {% if is_pdf %}
+                <iframe class="thumb-frame" src="/download/{{ p.filename }}?inline=1#page=1&view=FitH&toolbar=0&navpanes=0" loading="lazy"></iframe>
+              {% else %}
+                <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" onerror="this.onerror=null;this.src='{{ request.url_for('static', path='slide-placeholder.svg') }}'" />
+              {% endif %}
+            </div>
+            <div class="card__body">
+              <h4>{{ p.title }}</h4>
+              <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views</p>
+            </div>
+          </a>
+          <div class="card__actions">
+            {% if p.owner_id %}
+              <button class="btn btn--ghost btn-contact" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username }}" data-email="{{ p.owner_email }}">Contact Owner</button>
+            {% endif %}
+            {% if p.filename %}
+              <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      <div class="featured-nav" style="right:8px;">
+        <button id="featured-next" class="next" aria-label="Scroll right">▶</button>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Community uploads visible to signed-in users -->
+  {% if most_viewed and most_viewed|length > 0 %}
+  <section class="container" style="margin-top:18px;">
+    <div class="panel-head">
+      <h3 class="section-title">Most viewed</h3>
+      <p class="muted">Top presentations by views</p>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-top:10px;">
+      {% for m in most_viewed %}
+      <article class="card" data-pid="{{ m.id }}">
+        <a href="{{ url_for('view_presentation', presentation_id=m.id) }}" class="card__link">
+          {% set is_pdf = m.filename and m.filename.lower().endswith('.pdf') %}
+          {% set slide_thumb = '/presentations/' ~ m.id ~ '/slide/0' %}
+          {% set thumb_pdf = '/download/' ~ m.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+          <div class="card__thumb" style="height:120px;display:flex;align-items:center;justify-content:center;">
+            {% if is_pdf %}
+              <iframe class="thumb-frame" src="{{ thumb_pdf }}" title="{{ m.title }} preview" loading="lazy"></iframe>
+              {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ m.title }}" loading="lazy" data-cover="{{ m.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src='{{ request.url_for('static', path='slide-placeholder.svg') }}'" style="width:100%;height:100%;object-fit:cover;" />
+            {% endif %}
+          </div>
+          <div class="card__body">
+            <h4>{{ m.title }}</h4>
+            <p class="muted">by {% if m.owner_username %}<a href="/users/{{ m.owner_username }}">{{ m.owner_username }}</a>{% else %}{{ m.author or 'Unknown' }}{% endif %} · {{ m.views or 0 }} views</p>
+          </div>
+        </a>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  <section class="container community-uploads" style="margin-top:18px;">
+    <div class="panel-head">
+      <h3 class="section-title">Community uploads</h3>
+      <p class="muted">A live feed of recent uploads from creators across the site.</p>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-top:10px;">
+      {% for pres in presentations[:12] %}
+      {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+      {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
+      {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+      {% set thumb_url = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+      <article class="card" data-pid="{{ pres.id }}">
+        <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+          <div class="card__thumb">
+            {% if is_pdf %}
+              <iframe class="thumb-frame" src="{{ thumb_url }}" title="{{ pres.title }} preview" loading="lazy"></iframe>
+              {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src='{{ (pres.cover_url or request.url_for('static', path='slide-placeholder.svg')) }}'" style="width:100%;height:100%;object-fit:cover;" />
+            {% endif %}
+            <div class="card__bookmark" data-id="{{ pres.id }}" title="Save">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+          </div>
+          <div class="card__body">
+            <h4>{{ pres.title }}</h4>
+            <p class="muted">by {% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
+          </div>
+        </a>
+        <div class="card__actions">
+          {% set cu = current_user if current_user else None %}
+          {% if pres.owner_id %}
+            <button class="btn btn--ghost btn-contact" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username }}" data-email="{{ pres.owner_email }}">Contact Owner</button>
+            {% if current_user and current_user.id != pres.owner_id %}
+              {% if pres.is_following %}
+                <form class="follow-form" data-owner-id="{{ pres.owner_id }}" method="post" action="/users/{{ pres.owner_id }}/unfollow" style="display:inline">
+                  <button class="btn btn--ghost btn-follow">Unsubscribe</button>
+                </form>
+              {% else %}
+                <form class="follow-form" data-owner-id="{{ pres.owner_id }}" method="post" action="/users/{{ pres.owner_id }}/follow" style="display:inline">
+                  <button class="btn btn--ghost btn-follow">Subscribe</button>
+                </form>
+              {% endif %}
+              <span class="muted followers-count" data-owner-id="{{ pres.owner_id }}" style="margin-left:8px; font-size:13px;">{{ pres.followers_count or 0 }} followers</span>
+            {% else %}
+              <form method="post" action="/users/{{ pres.owner_id }}/follow" style="display:inline">
+                <button class="btn btn--ghost">Subscribe</button>
+              </form>
+            {% endif %}
+          {% elif pres.owner_email %}
+            <button class="btn btn--ghost btn-contact" data-user-id="" data-username="" data-email="{{ pres.owner_email }}">Contact Owner</button>
+          {% endif %}
+          <button class="btn btn--ghost btn-share" data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-filename="{{ pres.filename }}">Share</button>
+          {% if pres.owner_id and current_user and pres.owner_id != current_user.id %}
+          <button class="btn btn--ghost btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username }}">
+            Message <span class="msg-badge" data-user-id="{{ pres.owner_id }}" style="margin-left:6px;display:inline-block"></span>
+            <span class="presence-dot" data-user-id="{{ pres.owner_id }}" style="margin-left:6px;display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc"></span>
+          </button>
+          {% endif %}
+          {% if pres.filename %}
+          <a class="btn" href="{{ url_for('download_file', filename=pres.filename) }}">Download</a>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <p class="muted">No community uploads yet — be the first!</p>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="home-banner">
+    <div class="container home-banner__inner">
+      <div class="home-banner__copy">
+        <p class="pill pill--tiny" style="margin:0;">Spotlight</p>
+        <h2 class="home-banner__title">Share your next big idea with the world.</h2>
+        <p class="home-banner__subtitle">Upload in seconds, get a gorgeous preview, and offer instant downloads to your audience.</p>
+        <div class="home-banner__actions">
+          <a class="btn" href="{{ url_for('upload') }}">Upload now</a>
+          <a class="btn btn--ghost" href="{{ url_for('premium_subscribe') }}">BUY ME A CUP OF COFFEE</a>
+        </div>
+      </div>
+      <div class="home-banner__exchange" aria-hidden="true">
+        <lottie-player
+          src="/static/banners/file-share-loop-2.json"
+          background="transparent"
+          speed="1"
+          loop
+          autoplay
+          aria-hidden="true">
+        </lottie-player>
+      </div>
+    </div> 
+  </section>
+
+  <!-- <main class="page-shell">
     {% if not current_user %}
     <section class="landing-hero">
       <div class="container hero-inner landing-grid">
         <div class="hero-copy">
-          <div class="pill">Download free for 30 days</div>
+          <div class="pill">Create, share, inspire</div>
           <h1 class="mega-title">
-            <span class="hl">Here,</span>
-            <span class="hl hl--soft">there's no</span>
-            <span class="hl">such thing</span>
-            <span class="hl hl--soft">as a bad slide.</span>
+            <span class="hl">Build with clarity,</span>
+            <span class="hl hl--soft">present with calm,</span>
+            <span class="hl">share with ease.</span>
+            <span class="hl hl--soft">Your ideas, beautifully.</span>
           </h1>
-          <p class="muted lead">Starting a new presentation is never easy, but with a little inspiration, you're never really starting from scratch.</p>
+          <p class="muted lead">Upload, organize, and showcase decks without friction. Clean previews, smooth downloads, and a space where your work looks its best.</p>
           <form class="hero-search" action="{{ url_for('search') }}" method="get">
             <label class="sr-only" for="landing-search">Search</label>
             <input id="landing-search" name="q" type="search" placeholder="Search 25M presentations, people, topics" value="{{ request.query_params.get('q', '') }}" aria-label="Search" />
@@ -91,14 +269,14 @@
           </form>
           <div class="hero-actions">
             <a class="btn" href="{{ url_for('login') }}">Sign in</a>
-            <a class="btn btn--ghost" href="{{ url_for('register') }}">Upload</a>
+            <a class="btn btn--ghost" href="{{ url_for('register') }}">Start uploading</a>
             <span class="muted" style="font-size:13px;">EN</span>
           </div>
           <div class="quick-links">
-            <span>Nail your pitch</span>
-            <span>Explore AI trends</span>
-            <span>Present your research</span>
-            <span>Future of work</span>
+            <span>Polished pitch decks</span>
+            <span>Research made clear</span>
+            <span>Design-forward slides</span>
+            <span>Stories worth sharing</span>
           </div>
         </div>
         <div class="hero-visual">
@@ -115,42 +293,48 @@
           </div>
         </div>
       </div>
-    </section>
+    </section> -->
 
     <section class="container promo-split">
       <div class="promo-left">
-        <h2 class="promo-title">All the resources, references, and inspiration to help you on your way.</h2>
-        <p class="muted">Get the very best of Slideshare with a free 30-day trial.</p>
+        <h2 class="promo-title">All your decks in one calm, beautiful place.</h2>
+        <p class="muted">Share confidently, collaborate smoothly, and keep every version tidy.</p>
+        <div class="promo-highlight">Glowing cards that slide side-to-side so you can peek at each focus area.</div>
       </div>
       <div class="promo-right">
-        <div class="plan-card">
-          <div class="plan-header plan-header--warm">Free 30-day trial</div>
-          <div class="plan-body">
-            <ul>
-              <li>Download complete presentations in their original file format</li>
-              <li>Use AI to rewrite, rephrase, or simplify existing slide content</li>
-              <li>Copy &amp; paste to extract key insights</li>
-              <li>Enjoy an ad-free experience across all devices</li>
-            </ul>
-            <div class="plan-cta">
-              <div class="price">Free for 30 days — then $9.99/month</div>
-              <a class="btn" href="{{ url_for('register') }}">Start free trial</a>
-            </div>
-          </div>
+        <div class="promo-controls" aria-hidden="false">
+          <button class="promo-nav" type="button" data-promo-prev aria-label="Scroll cards left">←</button>
+          <button class="promo-nav" type="button" data-promo-next aria-label="Scroll cards right">→</button>
         </div>
-
-        <div class="plan-card">
-          <div class="plan-header plan-header--cool">Ad-supported</div>
-          <div class="plan-body">
-            <ul>
-              <li>10M+ presentations and documents on any topic</li>
-              <li>Get personalized recommendations for deeper discovery</li>
-              <li>Upload and share knowledge with a global community of 70M users</li>
-            </ul>
-            <div class="plan-cta">
-              <a class="btn btn--ghost" href="{{ url_for('login') }}">Access at no cost</a>
+        <div class="promo-track" data-promo-track>
+          <article class="plan-card plan-card--glow">
+            <div class="plan-header plan-header--cool">Why teams choose us</div>
+            <div class="plan-body">
+              <ul>
+                <li>Crisp previews for slides, docs, and PDFs</li>
+                <li>Clean downloads without clutter</li>
+                <li>Simple sharing for teammates and clients</li>
+                <li>Spaces that keep every file in order</li>
+              </ul>
+              <div class="plan-cta">
+                <a class="btn" href="{{ url_for('register') }}">Start sharing</a>
+              </div>
             </div>
-          </div>
+          </article>
+
+          <article class="plan-card plan-card--glow">
+            <div class="plan-header plan-header--warm">Built for creators</div>
+            <div class="plan-body">
+              <ul>
+                <li>Upload once, share everywhere</li>
+                <li>Readable typography and balanced layouts</li>
+                <li>Organize by project, client, or topic</li>
+              </ul>
+              <div class="plan-cta">
+                <a class="btn btn--ghost" href="{{ url_for('login') }}">Browse community decks</a>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -159,37 +343,38 @@
       <div class="trust-item">
         <div class="mini-icon" aria-hidden="true">🔍</div>
         <div>
-          <div class="trust-title">Search 10M+ decks</div>
-          <p class="muted">Find inspiration fast with curated topics and smart search.</p>
+          <div class="trust-title">Search that feels smart</div>
+          <p class="muted">Surface the right decks fast with topics, people, and tags.</p>
         </div>
       </div>
       <div class="trust-item">
         <div class="mini-icon" aria-hidden="true">⬇️</div>
         <div>
-          <div class="trust-title">Download originals</div>
-          <p class="muted">Grab PPT, PDF, or DOC files that work with your stack.</p>
+          <div class="trust-title">Downloads without friction</div>
+          <p class="muted">Keep formats intact—PPT, PDF, and docs stay presentation-ready.</p>
         </div>
       </div>
       <div class="trust-item">
         <div class="mini-icon" aria-hidden="true">✨</div>
         <div>
-          <div class="trust-title">Rewrite with AI</div>
-          <p class="muted">Refine slides, rephrase content, and simplify jargon.</p>
+          <div class="trust-title">Polish your story</div>
+          <p class="muted">Clear typography and balanced layouts put your ideas first.</p>
         </div>
       </div>
       <div class="trust-item">
         <div class="mini-icon" aria-hidden="true">☁️</div>
         <div>
-          <div class="trust-title">Upload from the cloud</div>
-          <p class="muted">Bring decks from Drive, Box, or OneDrive in seconds.</p>
+          <div class="trust-title">Stay organized</div>
+          <p class="muted">Projects, clients, and topics stay tidy in one calm space.</p>
         </div>
       </div>
     </section>
 
+    {% if cu %}
     <section class="container feature-panel">
       <div class="panel-head">
-        <h2 class="section-title">It all starts with a slide.</h2>
-        <p class="muted">If you're wondering how everyone else builds decks, now's your chance to find out.</p>
+        <h2 class="section-title">Build once. Share everywhere.</h2>
+        <p class="muted">Keep a single, beautiful source of truth for every idea.</p>
       </div>
       <div class="category-grid">
         {% for cat in ["Business","Mobile","Social Media","Marketing","Technology","Art & Photos","Career","Design"] %}
@@ -197,7 +382,8 @@
         {% endfor %}
       </div>
     </section>
-<!-- 
+    {% endif %}
+
     <section class="container slide-marquee">
       <div class="panel-head">
         <h3 class="section-title">Trending today</h3>
@@ -224,9 +410,9 @@
           {% endfor %}
         </div>
       </div>
-    </section> -->
+    </section> 
 
-    <!-- <section class="container visual-gallery">
+   <section class="container visual-gallery">
       <div class="panel-head">
         <h3 class="section-title">See the slides before you click</h3>
         <p class="muted">A quick look at popular decks people are saving right now.</p>
@@ -242,57 +428,52 @@
           </div>
         {% endfor %}
       </div>
-    </section> -->
+    </section>
 
     <section class="container feature-panel two-up">
       <div class="feature-card">
-        <h3 class="section-title">Go ahead. Geek out.</h3>
-        <p class="muted">Uncover something new and evolve your approach.</p>
+        <h3 class="section-title">Confident delivery</h3>
+        <p class="muted">Crisp previews and distraction-free layouts keep your audience focused.</p>
       </div>
       <div class="feature-card">
-        <h3 class="section-title">Off to a flying start.</h3>
-        <p class="muted">Use AI to rewrite, rephrase, or simplify existing slide content to suit your needs.</p>
+        <h3 class="section-title">Reusable building blocks</h3>
+        <p class="muted">Save sections, reuse slides, and stay consistent across projects.</p>
       </div>
     </section>
 
     <section class="container feature-panel two-up">
       <div class="feature-card">
-        <h3 class="section-title">Remember that great insight on slide 64?</h3>
-        <p class="muted">You don't need to. Download original files that work with your presentation apps.</p>
+        <h3 class="section-title">Always ready to share</h3>
+        <p class="muted">Links, downloads, and embeds that look great anywhere you send them.</p>
       </div>
       <div class="feature-card">
-        <h3 class="section-title">All the resources, references, and inspiration.</h3>
-        <p class="muted">Get the very best of Slideshare with a free 30-day trial.</p>
-        <div class="cta-stack" style="margin-top:10px;">
-          <a class="btn" href="{{ url_for('register') }}">Free 30-day trial</a>
-          <a class="btn btn--ghost" href="{{ url_for('login') }}">Access with ads</a>
-        </div>
+        <h3 class="section-title">Organize with ease</h3>
+        <p class="muted">Group decks by team or topic and keep everything tidy without extra effort.</p>
       </div>
     </section>
 
     <section class="container pricing-grid">
       <div class="plan-card">
-        <div class="pill">Free 30 days</div>
-        <h3>Download complete presentations in their original file format</h3>
+        <div class="pill">For individuals</div>
+        <h3>Share beautifully, without the noise</h3>
         <ul>
-          <li>Use AI to rewrite, rephrase, or simplify existing slide content</li>
-          <li>Copy and paste to extract key insights</li>
-          <li>Enjoy an ad-free experience across all devices</li>
+          <li>Clean previews for every upload</li>
+          <li>Reliable downloads in original formats</li>
+          <li>Simple links for sharing anywhere</li>
         </ul>
-        <p class="price">Free for 30 days, then $9.99/month</p>
-        <a class="btn" href="{{ url_for('register') }}">Start free trial</a>
-        <p class="muted" style="margin-top:8px;">Cancel anytime.</p>
+        <a class="btn" href="{{ url_for('register') }}">Start now</a>
+        <p class="muted" style="margin-top:8px;">Keep creating—no clutter, no pressure.</p>
       </div>
       <div class="plan-card plan-card--ghost">
-        <div class="pill">Ad-supported</div>
-        <h3>Access at no cost with on-page ads</h3>
+        <div class="pill">For teams</div>
+        <h3>Keep every deck aligned</h3>
         <ul>
-          <li>10M+ presentations and documents on any topic</li>
-          <li>Get personalized recommendations for deeper discovery</li>
-          <li>Upload and share knowledge with a global community of 5M users</li>
+          <li>Organize by project or client</li>
+          <li>Share with teammates in seconds</li>
+          <li>Stay consistent with reusable sections</li>
         </ul>
-        <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
-        <p class="muted" style="margin-top:8px;">Additional features available only with trial or subscription.</p>
+        <a class="btn btn--ghost" href="{{ url_for('login') }}">Explore together</a>
+        <p class="muted" style="margin-top:8px;">Made for collaboration, not upsells.</p>
       </div>
     </section>
 
@@ -362,6 +543,43 @@
       </div>
     </section>
 
+    <!-- Community uploads: public view -->
+    <section class="container community-uploads" style="margin-top:18px;">
+      <div class="panel-head">
+        <h3 class="section-title">Latest uploads</h3>
+        <p class="muted">Recent files uploaded by the community. Click to view or download.</p>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:10px;">
+        {% for pres in presentations %}
+        {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+        {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
+        {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+        {% set cover_or_pdf = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+        <article class="card" data-pid="{{ pres.id }}">
+          <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+            <div class="card__thumb">
+              {% if is_pdf %}
+              <iframe class="thumb-frame" src="{{ cover_or_pdf }}" title="{{ pres.title }} preview" loading="lazy" data-cover="{{ pres.cover_url or '' }}"></iframe>
+              {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}">
+              {% endif %}
+            </div>
+            <div class="card__body">
+              <h4>{{ pres.title }}</h4>
+              <p class="muted">by {% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
+            </div>
+          </a>
+          <div class="card__actions">
+            <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=pres.id) }}">Open</a>
+            <a class="btn" href="{{ url_for('download_file', filename=pres.filename) }}">Download</a>
+          </div>
+        </article>
+        {% else %}
+        <p class="muted">No uploads yet. Be the first to <a href="{{ url_for('upload') }}">upload</a>.</p>
+        {% endfor %}
+      </div>
+    </section>
+
     <section class="container layout-two-col" style="margin-top:12px;">
       <div>
         <div class="content-card" style="margin-top:0;">
@@ -372,18 +590,19 @@
           <div class="grid" style="margin-top:16px;">
             {% for pres in presentations %}
             {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+            {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
             {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-            {% set thumb_url = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+            {% set cover_or_pdf = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
             <article class="card">
               <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
                 <div class="card__thumb">
                   {% if is_pdf %}
-                  <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ thumb_url }}">
+                  <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ pres.cover_url or '' }}">
                     <canvas class="thumb-canvas" aria-label="{{ pres.title }} preview"></canvas>
-                    <object data="{{ thumb_url }}" data-thumb="{{ thumb_url }}" type="application/pdf" class="thumb-object" aria-label="{{ pres.title }} preview"></object>
+                    <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ pres.title }} preview"></object>
                   </div>
                   {% else %}
-                  <img src="{{ thumb_url }}" alt="{{ pres.title }}">
+                  <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}">
                   {% endif %}
                 </div>
                 <div class="card__body">
@@ -410,15 +629,16 @@
           <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">
             {% for pres in presentations[:8] %}
             {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+            {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
             {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-            {% set thumb_url = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+            {% set cover_or_pdf = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
             <article class="card">
               <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
                 <div class="card__thumb">
                   {% if is_pdf %}
-                  <iframe class="thumb-frame" src="{{ thumb_url }}" title="{{ pres.title }} preview" loading="lazy"></iframe>
+                  <iframe class="thumb-frame" src="{{ cover_or_pdf }}" title="{{ pres.title }} preview" loading="lazy" data-cover="{{ pres.cover_url or '' }}"></iframe>
                   {% else %}
-                  <img src="{{ thumb_url }}" alt="{{ pres.title }}">
+                  <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}">
                   {% endif %}
                 </div>
                 <div class="card__body">
@@ -450,12 +670,12 @@
           </ul>
         </div>
         <div class="content-card premium-card">
-          <div class="pill">Premium</div>
-          <h3 style="margin:8px 0 6px 0;">Have a lightbulb moment.</h3>
-          <p class="muted" style="margin:0 0 10px 0;">Power your next presentation with professional insights and inspiring content.</p>
+          <div class="pill">Tips</div>
+          <h3 style="margin:8px 0 6px 0;">Share with confidence.</h3>
+          <p class="muted" style="margin:0 0 10px 0;">Keep your best slides close, reuse them, and stay on-message across every deck.</p>
           <div class="auth-actions" style="margin-top:6px;">
-            <a class="btn" href="{{ url_for('premium_subscribe') }}">Learn more</a>
-            <a class="btn btn--ghost" href="{{ url_for('upload') }}">Upload now</a>
+            <a class="btn" href="{{ url_for('upload') }}">Upload now</a>
+            <a class="btn btn--ghost" href="{{ url_for('register') }}">Join the community</a>
           </div>
         </div>
       </aside>
@@ -494,6 +714,14 @@
       <div>
         <a class="brand" href="{{ url_for('index') }}">Fileshare</a>
         <p class="muted">Share presentations, find ideas.</p>
+      </div>
+      <div>
+        <h4>Get in touch</h4>
+        <div class="cta-stack" style="margin-top:8px; gap:8px; flex-direction:column; align-items:flex-start;">
+          <a class="btn" href="{{ url_for('about') }}">About us</a>
+          <a class="btn btn--ghost" href="{{ url_for('contact') }}">Contact</a>
+          <a class="btn btn--ghost" href="{{ url_for('help') }}">Help</a>
+        </div>
       </div>
       <div>
         <h4>Company</h4>
