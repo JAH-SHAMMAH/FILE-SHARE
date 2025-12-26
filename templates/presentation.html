@@ -6,13 +6,43 @@
       <div class="presentation-header">
         <div>
           <h1>{{ p.title }}</h1>
-          <p class="muted">by {{ p.author or 'Unknown' }} · {{ p.views or 0 }} views</p>
+          <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %} · {{ p.views or 0 }} views</p>
         </div>
         <div class="presentation-actions">
           {% if original_url %}
           <a class="btn" href="{{ original_url }}" download>Download original</a>
           {% endif %}
           <a class="btn btn--ghost" href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.url_for('view_presentation', presentation_id=p.id) }}" target="_blank">Share</a>
+
+          <!-- Bookmark button + saved count -->
+          <button id="bookmark-btn" class="bookmark-btn" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_bookmarked else 'false' }}">
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4-7 4V3a1 1 0 0 1 1-1z"/></svg>
+            <span id="bookmark-count" class="bookmark-count">{{ bookmarks_count or 0 }}</span>
+          </button>
+
+          {% if p.owner_id %}
+            <button class="btn btn--ghost btn-contact" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username or p.author }}" data-email="{{ p.owner_email or '' }}">Contact Owner</button>
+            <button class="btn btn--ghost btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username or p.author }}">Message <span class="msg-badge" data-user-id="{{ p.owner_id }}"></span></button>
+            <span class="presence-dot" data-user-id="{{ p.owner_id }}" style="margin-left:6px;width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block"></span>
+
+            {% if is_following %}
+              <form class="follow-form" data-owner-id="{{ p.owner_id }}" method="post" action="/users/{{ p.owner_id }}/unfollow" style="display:inline">
+                <button class="btn btn--ghost btn-follow">Unsubscribe</button>
+              </form>
+            {% else %}
+              <form class="follow-form" data-owner-id="{{ p.owner_id }}" method="post" action="/users/{{ p.owner_id }}/follow" style="display:inline">
+                <button class="btn btn--ghost btn-follow">Subscribe</button>
+              </form>
+            {% endif %}
+
+            <span class="muted followers-count" data-owner-id="{{ p.owner_id }}" style="margin-left:8px; font-size:13px;">{{ followers_count or 0 }} followers</span>
+
+            <form method="post" action="/presentations/{{ p.id }}/buy" style="display:inline">
+              <button class="btn btn--ghost">Buy</button>
+            </form>
+          {% elif p.owner_email %}
+            <button class="btn btn--ghost btn-contact" data-user-id="" data-username="" data-email="{{ p.owner_email }}">Contact Owner</button>
+          {% endif %}
         </div>
       </div>
 
@@ -58,7 +88,9 @@
     <aside class="presentation-side">
       <div class="box">
         <h4>Actions</h4>
+        {% if p.filename %}
         <a class="btn" href="/download/{{ p.filename }}" download>Download</a>
+        {% endif %}
         <form method="post" action="/presentations/{{ p.id }}/like" style="display:inline">
           <button class="btn btn--ghost" type="submit">Like ({{ likes }})</button>
         </form>
@@ -98,14 +130,10 @@
 </div>
 {% endblock %}
 
-{% block head %}
-  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
-{% endblock %}
-
 {% block scripts %}
   <script>
     if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/js/pdf.worker.min.js";
       window.pdfjsLib.disableWorker = false;
     }
     (async () => {
@@ -176,4 +204,10 @@
       });
     })();
   </script>
+    <script>
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/js/pdf.worker.min.js";
+        window.pdfjsLib.disableWorker = false;
+      }
+    </script>
 {% endblock %}

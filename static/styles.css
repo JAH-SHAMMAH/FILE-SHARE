@@ -362,6 +362,14 @@ body {
 .card__bookmark { transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }
 .card__bookmark:active { transform: scale(0.96); }
 
+/* Presentation page bookmark button */
+.bookmark-btn { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; border:1px solid var(--border); background: var(--surface); cursor:pointer; font-weight:700; }
+.bookmark-btn .icon { width:18px; height:18px; color: var(--muted); }
+.bookmark-btn.bookmarked { background: linear-gradient(135deg, var(--accent), var(--brand-1)); color: #fff; border-color: transparent; }
+.bookmark-btn.bookmarked .icon { color: #fff; filter: drop-shadow(0 8px 18px rgba(16,24,40,0.18)); }
+.bookmark-count { display:inline-block; background: rgba(0,0,0,0.06); padding:4px 8px; border-radius:999px; font-size:13px; }
+.bookmark-btn.bookmarked .bookmark-count { background: rgba(255,255,255,0.12); }
+
 /* overlay actions that appear on hover/tap */
 .card__actions { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 8px; align-items: center; justify-content: flex-end; opacity: 0; transform: translateY(6px); transition: opacity 160ms ease, transform 160ms ease; pointer-events: none; }
 .card:hover .card__actions, .card:focus-within .card__actions { opacity: 1; transform: translateY(0); pointer-events: auto; }

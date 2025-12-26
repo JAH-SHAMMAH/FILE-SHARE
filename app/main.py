@@ -1115,6 +1115,13 @@ def view_presentation(request: Request, presentation_id: int):
                     select(Follow).where((Follow.follower_id == cu.id) & (Follow.following_id == p.owner_id))
                 ).first()
                 is_following = bool(exists)
+                # bookmarks for this presentation
+                bookmarks = session.exec(select(Bookmark).where(Bookmark.presentation_id == presentation_id)).all()
+                bookmarks_count = len(bookmarks)
+                is_bookmarked = False
+                if cu and cu.id:
+                    b_exists = session.exec(select(Bookmark).where((Bookmark.presentation_id == presentation_id) & (Bookmark.user_id == cu.id))).first()
+                    is_bookmarked = bool(b_exists)
 
     return templates.TemplateResponse(
         "presentation.html",
@@ -1129,6 +1136,8 @@ def view_presentation(request: Request, presentation_id: int):
             "original_url": original_url,
             "is_following": is_following,
             "followers_count": followers_count,
+                "bookmarks_count": bookmarks_count,
+                "is_bookmarked": is_bookmarked,
         },
     )
 
@@ -1901,7 +1910,9 @@ def toggle_bookmark(presentation_id: int, request: Request, current_user: User =
             try:
                 session.delete(existing)
                 session.commit()
-                return {"bookmarked": False}
+                # return updated count as well
+                cnt = session.exec(select(Bookmark).where(Bookmark.presentation_id == presentation_id)).all()
+                return {"bookmarked": False, "count": len(cnt)}
             except Exception:
                 session.rollback()
                 raise HTTPException(status_code=500, detail="Failed to remove bookmark")
@@ -1911,10 +1922,27 @@ def toggle_bookmark(presentation_id: int, request: Request, current_user: User =
                 session.add(bm)
                 session.commit()
                 session.refresh(bm)
-                return {"bookmarked": True}
+                cnt = session.exec(select(Bookmark).where(Bookmark.presentation_id == presentation_id)).all()
+                return {"bookmarked": True, "count": len(cnt)}
             except Exception:
                 session.rollback()
                 raise HTTPException(status_code=500, detail="Failed to create bookmark")
+
+
+
+@app.get("/api/presentations/{presentation_id}/bookmarks")
+def presentation_bookmarks(presentation_id: int, request: Request, current_user: User = Depends(get_current_user_optional)):
+    """Return bookmark count for a presentation and whether current user bookmarked it."""
+    with Session(engine) as session:
+        rows = session.exec(select(Bookmark).where(Bookmark.presentation_id == presentation_id)).all()
+        count = len(rows)
+        bookmarked = False
+        if current_user:
+            exists = session.exec(
+                select(Bookmark).where((Bookmark.presentation_id == presentation_id) & (Bookmark.user_id == current_user.id))
+            ).first()
+            bookmarked = bool(exists)
+    return {"count": count, "bookmarked": bookmarked}
 
 
 @app.post("/admin/backfill-categories")

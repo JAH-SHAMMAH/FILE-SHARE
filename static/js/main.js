@@ -293,7 +293,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // click handler (delegation)
   document.body.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.card__bookmark');
+    const bookmarkCardBtn = e.target.closest('.card__bookmark');
+    const bookmarkDetailBtn = e.target.closest('.bookmark-btn');
+    const btn = bookmarkCardBtn || bookmarkDetailBtn;
     if (!btn) return;
     e.preventDefault();
     const id = btn.getAttribute('data-id');
@@ -311,6 +313,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const data = await res.json();
       btn.classList.toggle('bookmarked', !!data.bookmarked);
+      // update any badge on detail page
+      try {
+        if (typeof data.count !== 'undefined') {
+          const bc = document.getElementById('bookmark-count');
+          if (bc) bc.textContent = String(data.count || 0);
+        }
+      } catch (e) {}
       showToast(data.bookmarked ? 'Saved' : 'Removed', data.bookmarked ? 'success' : 'info');
     } catch (err) {
       btn.classList.toggle('bookmarked', was);
