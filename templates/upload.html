@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block head %}
+  <style>
+    .uploads-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .uploads-tabs { display:flex; gap:8px; align-items:center; }
+    .hamburger { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid rgba(0,0,0,0.06); background:white; cursor:pointer; }
+    .gallery-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+    .gallery-card { background:#fff; border:1px solid rgba(0,0,0,0.04); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+    .gallery-card .gallery-meta { padding:10px; display:flex; gap:8px; align-items:center; }
+    .thumb-frame, img.thumb { width:100%; height:140px; object-fit:cover; display:block; }
+  </style>
+{% endblock %}
+
+
+{% block content %}
+{% set is_premium = current_user and current_user.is_premium %}
+
+<section class="content-card upload-hero upload-hero--lite">
+  <h1 class="upload-title">Let’s get your document ready for the spotlight.</h1>
+  <p class="muted">The details on this page help your documents be easily found.</p>
+</section>
+
+{% if uploads is defined %}
+<div class="uploads-nav">
+  <div class="uploads-tabs">
+    <button class="hamburger" id="hamburger" aria-label="Open menu">☰</button>
+    <a class="btn btn--ghost" href="/">Community uploads</a>
+    <a class="btn" id="my-uploads-link" href="/upload?scope=mine">My uploads</a>
+    <a class="btn btn--ghost" href="/bookmarks">Saved stuff</a>
+  </div>
+  <div class="muted">Showing: <span id="uploads-scope-label">My uploads</span></div>
+</div>
+<section class="content-card" style="margin-top:12px;">
+  <h3 style="margin:0 0 10px 0;">Your uploads <span class="muted" style="font-size:14px; font-weight:600;">({{ total_uploads or 0 }})</span></h3>
+
+  <form method="get" class="meta-grid" style="gap:8px; align-items:center; margin-bottom:12px;">
+    <label class="field" style="margin:0;">
+      <input name="q" placeholder="Search your uploads" value="{{ q or '' }}" />
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="category">
+        <option value="">All categories</option>
+        {% for c in categories %}
+        <option value="{{ c.name }}" {% if category == c.name %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="sort">
+        <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest</option>
+        <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Oldest</option>
+      </select>
+    </label>
+    <label class="field" style="margin:0;">
+      <select name="per_page">
+        <option value="6" {% if per_page == 6 %}selected{% endif %}>6</option>
+        <option value="12" {% if per_page == 12 %}selected{% endif %}>12</option>
+        <option value="24" {% if per_page == 24 %}selected{% endif %}>24</option>
+      </select>
+    </label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn" type="submit">Filter</button>
+      <a class="btn btn--ghost" href="{{ request.url_for('upload') }}">Reset</a>
+    </div>
+  </form>
+
+  <div class="gallery-grid" style="margin-top:10px;">
+    {% if uploads|length == 0 %}
+      <div class="muted">You have no uploads matching these filters.</div>
+    {% endif %}
+    {% for p in uploads %}
+    {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+    {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+    {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+    {% set cover_or_pdf = p.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+    <div class="gallery-card">
+      <div style="height:140px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(14,165,233,0.06), rgba(249,115,22,0.04));">
+        {% if is_pdf %}
+        <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url or '' }}" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+          <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
+          <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
+        </div>
+        {% else %}
+        <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" style="max-width:100%;max-height:100%;object-fit:cover;" />
+        {% endif %}
+      </div>
+      <div class="gallery-meta">
+        <div style="flex:1">
+          <div style="font-weight:700">{{ p.title }}</div>
+          <div class="muted" style="font-size:13px;">{{ p.created_at.strftime('%Y-%m-%d') }} • {{ p.mimetype or 'file' }}</div>
+          <div style="margin-top:6px; font-size:13px;">Saved: <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></div>
+          {% if p.owner_username %}
+          <div style="font-size:13px; margin-top:6px;">
+            by <a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>
+          </div>
+          {% endif %}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">View</a>
+          <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
+          {% if p.owner_id %}
+            <button class="btn btn--ghost btn-contact" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}" data-email="{{ p.owner_email if p.owner_email is defined else '' }}">Contact Owner</button>
+            <button class="btn btn--ghost btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}">Message</button>
+            {% if current_user and current_user.id != p.owner_id %}
+            <form class="follow-form" data-owner-id="{{ p.owner_id }}" method="post" action="/users/{{ p.owner_id }}/follow" style="display:inline">
+              <button class="btn btn--ghost btn-follow">Subscribe</button>
+            </form>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% set last_page = (total_uploads // per_page) + (1 if total_uploads % per_page else 0) %}
+  {% if last_page > 1 %}
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+    {% if page > 1 %}
+      <a class="btn btn--ghost" href="?page={{ page-1 }}&per_page={{ per_page }}&category={{ category or '' }}&q={{ q or '' }}&sort={{ sort }}">Previous</a>
+    {% endif %}
+    <div class="muted">Page {{ page }} of {{ last_page }}</div>
+    {% if page < last_page %}
+      <a class="btn" href="?page={{ page+1 }}&per_page={{ per_page }}&category={{ category or '' }}&q={{ q or '' }}&sort={{ sort }}">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</section>
+{% endif %}
+
+<section class="upload-shell upload-shell--slim" id="upload-form" style="margin-top:24px;">
+  <form method="post" enctype="multipart/form-data" class="upload-layout upload-form" id="upload-form-el">
+    <div class="preview-stack">
+      <div class="preview-frame-box preview-frame-box--tight" id="file-preview-box">
+        <div class="preview-placeholder" id="file-preview-placeholder">
+          <div class="pill pill--tiny">Preview</div>
+          <p class="muted" style="margin:8px 0 0 0;">Your first page will appear here</p>
+        </div>
+        <canvas id="file-preview-canvas" class="file-preview file-preview--canvas" aria-label="File preview canvas"></canvas>
+        <object id="file-preview-frame" class="file-preview" type="application/pdf" aria-label="File preview"></object>
+        <div class="preview-toolbar">
+          <span class="muted" id="preview-page-label">1 of ?</span>
+          <div class="preview-actions-inline">
+            <button type="button" class="icon-btn" id="preview-zoom">↕</button>
+          </div>
+        </div>
+      </div>
+      <label class="field" style="margin-top:12px;">
+        <div class="dropzone dropzone--tight">
+          <div>
+            <p class="muted" style="margin:0;">Drag & drop or</p>
+            <strong id="file-name">browse your computer</strong>
+          </div>
+          <input id="file-input" name="file" type="file" accept=".pdf,.ppt,.pptx,.pptm" required aria-label="Select file to upload" />
+        </div>
+      </label>
+    </div>
+
+    <div class="upload-form-panel content-card">
+      {% if error %}
+      <div class="alert alert-error" style="margin-bottom:12px;">{{ error }}</div>
+      {% endif %}
+
+      <label class="field">Title*<input name="title" id="title-input" required placeholder="Minimum 40 characters" /></label>
+      <label class="field">Description*<textarea name="description" id="desc-input" rows="6" placeholder="Briefly summarize the main points. Short, simple sentences with a few keywords are best."></textarea></label>
+
+      {% if is_premium %}
+      <div class="ai-block" style="margin-bottom:12px;">
+        <div class="pill pill--tiny">Premium AI</div>
+        <h4 style="margin:8px 0 6px 0;">Refine your slides faster</h4>
+        <p class="muted" style="margin:0 0 8px 0;">Paste a slide or summary and let AI rewrite, rephrase, or simplify it before you publish.</p>
+        <textarea id="ai-input" rows="4" placeholder="Paste slide text to improve"></textarea>
+        <div class="auth-actions" style="margin-top:8px; gap:8px; justify-content:flex-start;">
+          <button class="btn" type="button" data-ai-mode="rewrite">Rewrite</button>
+          <button class="btn btn--ghost" type="button" data-ai-mode="rephrase">Rephrase</button>
+          <button class="btn btn--ghost" type="button" data-ai-mode="simplify">Simplify</button>
+        </div>
+        <div class="ai-output" id="ai-output"></div>
+        <p class="muted" style="font-size:12px; margin-top:6px;">You can edit the result and drop it into the description.</p>
+      </div>
+      {% endif %}
+
+      <div class="meta-grid meta-grid--compact">
+        <label class="field">Category*
+          <select name="category" required>
+            <option value="">Select a category</option>
+            <option value="school">School</option>
+            <option value="politics">Politics</option>
+            <option value="society">Society</option>
+            <option value="technology">Technology</option>
+            <option value="business">Business</option>
+            <option value="design">Design</option>
+            <option value="marketing">Marketing</option>
+            {% for c in categories %}
+            <option value="{{ c.name }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">Tags
+          <input name="tags" placeholder="Add up to 20 keywords" />
+        </label>
+      </div>
+
+      <div class="meta-grid meta-grid--compact">
+        <label class="field">Privacy
+          <select name="privacy">
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+        </label>
+        <label class="field">License
+          <select name="license">
+            <option value="all_rights_reserved">All Rights Reserved</option>
+            <option value="cc_by">CC BY</option>
+            <option value="cc_by_sa">CC BY-SA</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" name="allow_download" value="1" checked />
+          <span>Allow people to download this document</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" name="allow_embed" value="1" checked />
+          <span>Allow people to embed this document</span>
+        </label>
+      </div>
+
+      <div class="auth-actions" style="justify-content:flex-end; gap:10px; margin-top:10px;">
+        <a class="btn btn--ghost" href="/">Cancel</a>
+        <button class="btn" type="submit">Publish</button>
+      </div>
+    </div>
+  </form>
+</section>
+
+<script>
+  // Small UI helpers for upload page
+  (function(){
+    const ham = document.getElementById('hamburger');
+    if (ham) ham.addEventListener('click', ()=>{ alert('Menu:\n- Profile\n- Settings\n- Sign out'); });
+    const params = new URLSearchParams(location.search);
+    const scope = params.get('scope') || 'mine';
+    const label = document.getElementById('uploads-scope-label');
+    if (label) label.textContent = scope === 'community' ? 'Community uploads' : 'My uploads';
+  })();
+</script>
+
+{% endblock %}

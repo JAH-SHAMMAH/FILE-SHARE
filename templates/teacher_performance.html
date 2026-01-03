@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Teacher Performance — {{ classroom.name }}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Teacher Performance — {{ classroom.name }}</h1>
+    <p><a href="/classrooms/{{ classroom.id }}/library">Back to classroom</a></p>
+    <p><a href="/classrooms/{{ classroom.id }}/performance.csv">Download CSV</a> — <a href="/classrooms/{{ classroom.id }}/performance/students">Student metrics (JSON)</a></p>
+    {% if teachers %}
+      <table>
+        <thead><tr><th>Teacher</th><th>Assignments Created</th><th>Materials Uploaded</th><th>Submissions Received</th></tr></thead>
+        <tbody>
+          {% for t in teachers %}
+          <tr>
+            <td>
+              {{ t.username or t.user_id }}
+              {% if t.site_role == 'teacher' %}
+                <span title="Teacher" style="color:#2563eb;">★</span>
+              {% elif t.site_role == 'student' %}
+                <span title="Student" style="color:#f59e0b;">★</span>
+              {% elif t.site_role == 'individual' %}
+                <span title="Individual" style="color:#dc2626;">★</span>
+              {% elif t.site_role == 'passerby' %}
+                <span title="Passerby" style="color:#111827;">★</span>
+              {% endif %}
+            </td>
+            <td>{{ t.assignments_count }}</td>
+            <td>{{ t.uploads_count }}</td>
+            <td>{{ t.submissions_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No teachers found for this classroom.</p>
+    {% endif %}
+    <h2>Per-student engagement</h2>
+    <div id="student-chart"></div>
+    <script>
+      async function renderStudents(){
+        try{
+          const res = await fetch('/api/classrooms/{{ classroom.id }}/performance/students');
+          const j = await res.json();
+          const el = document.getElementById('student-chart');
+          if(!j.students || j.students.length===0){ el.innerText='No student metrics'; return }
+          // simple table
+          let html = '<table><thead><tr><th>Student</th><th>Submissions</th><th>Attendance</th><th>Events</th></tr></thead><tbody>';
+          for(const s of j.students){
+            html += `<tr><td>${s.username||s.user_id}</td><td>${s.submissions_count}</td><td>${s.attendance_count}</td><td>${s.events_count}</td></tr>`;
+          }
+          html += '</tbody></table>';
+          el.innerHTML = html;
+        }catch(e){ console.error(e); }
+      }
+      renderStudents();
+    </script>
+  </div>
+</body>
+</html>

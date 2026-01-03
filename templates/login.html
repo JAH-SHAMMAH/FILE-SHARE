@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+</head>
+<body class="auth-body">
+  <main class="auth-shell" aria-label="Sign in">
+    <section class="auth-card auth-card--dark">
+      <h1 class="auth-title">Sign in</h1>
+      <p class="auth-subtitle">Sign in to get started</p>
+
+      {% if error %}
+      <div class="auth-alert auth-alert--error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('login') }}" class="auth-form" id="login-form">
+        <label class="auth-field">Email or username
+          <input name="username" required autofocus />
+        </label>
+        <label class="auth-field">Password
+          <input name="password" type="password" required />
+        </label>
+        <button class="auth-btn-primary" type="submit">Sign in</button>
+      </form>
+
+      <p class="auth-switch">Don't have an account?
+        <a href="{{ url_for('register') }}">Create account</a>
+      </p>
+    </section>
+  </main>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>

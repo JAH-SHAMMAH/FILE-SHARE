@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>247FILE SHARE</title>
+  <link rel="icon" href="{{ request.url_for('static', path='logo.svg') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+</head>
+<body>
+  {% include '_header.html' %}
+
+  {% set cu = (current_user if (current_user is defined and current_user) else (request.state.current_user if request and request.state else None)) %}
+  {% if cu %}
+  <script src="{{ request.url_for('static', path='js/categories.js') }}" defer></script>
+  {% endif %}
+
+  {% if current_user %}
+  <div class="signed-in-ribbon">
+    <div class="container ribbon-inner">
+      <span class="pill pill--tiny">New</span>
+      <div>
+        <div class="ribbon-title">upload upload upload!</div>
+        <a class="muted" href="about.html">Learn more about us.</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if my_uploads and my_uploads|length > 0 %}
+  <section class="container" style="margin-top:18px;">
+    <h3>Your uploads <span class="muted" style="font-size:14px; font-weight:600;">({{ my_upload_count or (my_uploads|length) }})</span></h3>
+    <div class="gallery-grid" style="margin-top:10px;">
+      {% for p in my_uploads %}
+      <div class="gallery-card">
+        <div style="height:120px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(14,165,233,0.06), rgba(249,115,22,0.04));">
+          <div style="font-weight:800;">{{ p.title[:40] }}</div>
+        </div>
+        <div class="gallery-meta">
+          <div style="flex:1">
+            <div style="font-weight:700">{{ p.title }}</div>
+            <div class="muted" style="font-size:13px;">{{ p.created_at.strftime('%Y-%m-%d') }} • {{ p.mimetype or 'file' }}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">View</a>
+            <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <main class="page-shell">
+    {% if not current_user %}
+    <section class="landing-hero">
+      <div class="container hero-inner landing-grid">
+        <div class="hero-copy">
+          <h1 class="mega-title">
+            <span class="hl">Real files</span>
+            <span class="hl hl--soft">slides & ideas</span>
+          </h1>
+          <p class="muted lead">A cool place to share, read, and be enlightened.</p>
+          <div class="hero-actions">
+            <a class="btn" href="{{ url_for('register') }}">start your journey</a>
+            <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Focused marketing for the file-sharing platform -->
+    <section class="container fs-section fs-section--grid">
+      <div>
+        <p class="fs-kicker">File sharing, without the chaos</p>
+        <h2 class="fs-title">A calm home for everything you send.</h2>
+        <p class="muted fs-body">247FILE SHARE keeps your presentations, PDFs, and documents tidy, branded, and ready to share in seconds.</p>
+        <ul class="fs-list">
+          <li>Upload once, share with a simple link.</li>
+          <li>Crisp previews so people know what they are opening.</li>
+          <li>Organize files by client, project, or classroom.</li>
+        </ul>
+        <div class="hero-actions" style="margin-top:20px;">
+          <a class="btn" href="{{ url_for('register') }}">Create a free account</a>
+          <a class="btn btn--ghost" href="{{ url_for('upload') }}">Try a test upload</a>
+        </div>
+      </div>
+      <div class="fs-preview">
+        <div class="fs-preview-card">
+          <div class="fs-preview-title">Client handoff</div>
+          <p class="muted">Share decks, notes, and follow-up files from one clean page.</p>
+        </div>
+        <div class="fs-preview-card fs-preview-card--secondary">
+          <div class="fs-preview-title">Class resources</div>
+          <p class="muted">Upload lesson slides and assignments your students can revisit anytime.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container fs-section">
+      <div class="panel-head">
+        <h3 class="section-title">Why people use 247FILE SHARE</h3>
+        <p class="muted">Built for creators, teachers, and teams who care how their work looks.</p>
+      </div>
+      <div class="fs-feature-grid">
+        <article class="fs-feature-card">
+          <h4>Beautiful previews</h4>
+          <p class="muted">Your files open in clean, readable viewers that feel as calm as a page of print.</p>
+        </article>
+        <article class="fs-feature-card">
+          <h4>Fast, reliable downloads</h4>
+          <p class="muted">PPT, PPTX, and PDF stay in their original quality so nothing breaks before a meeting.</p>
+        </article>
+        <article class="fs-feature-card">
+          <h4>Simple sharing</h4>
+          <p class="muted">Send a single link instead of a pile of attachments, with optional private access.</p>
+        </article>
+        <article class="fs-feature-card">
+          <h4>Organized spaces</h4>
+          <p class="muted">Group files into tidy collections for each client, class, or project.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="container fs-section fs-metric-section">
+      <div class="fs-metrics">
+        <div class="fs-metric">
+          <div class="fs-metric-value">2x</div>
+          <p class="muted">faster handoffs when everything lives on one share page.</p>
+        </div>
+        <div class="fs-metric">
+          <div class="fs-metric-value">0 clutter</div>
+          <p class="muted">no pop-up ads or noisy sidebars distracting from your work.</p>
+        </div>
+        <div class="fs-metric">
+          <div class="fs-metric-value">Minutes</div>
+          <p class="muted">to upload, brand, and share your next file set.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container fs-section fs-cta">
+      <div class="fs-cta-card">
+        <div>
+          <p class="pill">Start in seconds</p>
+          <h3>Upload your first file and send a link that feels professional.</h3>
+          <p class="muted">No setup calls, no long forms—just sign in, drag a file, and share.</p>
+        </div>
+        <div class="auth-actions">
+          <a class="btn" href="{{ url_for('register') }}">Get started free</a>
+          <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
+        </div>
+      </div>
+    </section>
+    {% else %}
+
+    <section class="container dashboard-hero">
+      <div>
+        <p class="muted" style="text-transform:uppercase; letter-spacing:1px; font-size:12px;">Welcome back</p>
+        <h1 class="section-title" style="font-size:28px;">Here are the latest uploads from the community.</h1>
+        <div class="auth-actions" style="margin-top:12px;">
+          <a class="btn" href="{{ url_for('upload') }}">Upload</a>
+          <a class="btn btn--ghost" href="{{ url_for('search') }}">Search everything</a>
+        </div>
+      </div>
+      <div class="signed-in-metrics">
+        <div>
+          <div class="metric-value">{{ presentations|length }}</div>
+          <div class="muted">Total presentations</div>
+        </div>
+        <div>
+          <div class="metric-value">10M+</div>
+          <div class="muted">Ideas to explore</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Community uploads: public view for signed-in users -->
+    <section class="container community-uploads" style="margin-top:18px;">
+      <div class="panel-head">
+        <h3 class="section-title">Latest uploads</h3>
+        <p class="muted">Recent files uploaded by the community. Click to view or download.</p>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:10px;">
+        {% for pres in presentations %}
+        {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
+        {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
+        {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+        {% set cover_or_pdf = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+        <article class="card" data-pid="{{ pres.id }}">
+          <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+            <div class="card__thumb">
+              {% if is_pdf %}
+              <iframe class="thumb-frame" src="{{ cover_or_pdf }}" title="{{ pres.title }} preview" loading="lazy" data-cover="{{ pres.cover_url or '' }}"></iframe>
+              {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}">
+              {% endif %}
+            </div>
+            <div class="card__body">
+              <h4>{{ pres.title }}</h4>
+              <p class="muted">by {% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
+              <p class="muted" style="margin-top:4px; font-size:13px;">{{ pres.views or 0 }} views</p>
+            </div>
+          </a>
+          <button class="card__bookmark" type="button" data-id="{{ pres.id }}" aria-label="Save presentation" title="Save for later">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
+          </button>
+        </article>
+        {% else %}
+        <p class="muted">No uploads yet. Be the first to <a href="{{ url_for('upload') }}">upload</a>.</p>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </main>
+
+  <div id="preview-modal" class="preview-modal hidden">
+    <div class="preview-backdrop" data-preview-close></div>
+    <div class="preview-dialog">
+      <div class="preview-head">
+        <div>
+          <div class="preview-title" id="preview-title">Preview</div>
+          <div class="preview-status muted" id="preview-status"></div>
+        </div>
+        <button class="preview-close" type="button" data-preview-close aria-label="Close preview">×</button>
+      </div>
+      <div class="preview-body" id="preview-body">
+        <div class="preview-placeholder" id="preview-placeholder">
+          <div class="pill pill--tiny">Preview</div>
+          <p class="muted" style="margin:8px 0 0 0;">Loading first page…</p>
+        </div>
+        <canvas id="preview-canvas" class="file-preview file-preview--canvas" aria-label="Presentation preview"></canvas>
+        <object id="preview-object" class="file-preview" type="application/pdf" aria-label="Presentation preview fallback"></object>
+        <div class="preview-message hidden" id="preview-message"></div>
+      </div>
+      <div class="preview-actions" id="preview-actions">
+        <a id="preview-open" class="btn" href="#" target="_blank" rel="noopener">Open full view</a>
+        <a id="preview-download" class="btn btn--ghost" href="#" download>Download original</a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-inline">
+      <div class="footer-inline__brand">© {{ current_year or 2025 }} FileShare</div>
+      <nav class="footer-inline__nav" aria-label="Footer">
+        <a href="{{ url_for('about') }}">About</a>
+        <a href="{{ url_for('help') }}">Help</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>

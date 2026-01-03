@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>My Teachers</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>My Teachers</h1>
+    <p><a href="/">Home</a></p>
+    {% if teachers and teachers|length %}
+      <ul>
+        {% for t in teachers %}
+          <li><a href="/teachers/{{ t.id }}/presentations">{{ t.username or t.email }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>You are not enrolled as a student in any classrooms.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

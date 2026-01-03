@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ classroom.name }} — Attendance</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Attendance — {{ classroom.name }}</h1>
+    <p><a href="/classrooms/{{ classroom.id }}/library">Back to classroom</a></p>
+
+    {% if members %}
+      <form id="attendance-form">
+        <table>
+          <thead><tr><th>Student</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for m in members %}
+            {% if m.role == 'student' %}
+            <tr>
+              <td>{{ m.username or m.user_id }}</td>
+              <td>
+                <select name="status_{{ m.user_id }}">
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="late">Late</option>
+                </select>
+              </td>
+            </tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+        <button id="submit-attendance" type="button">Save Attendance</button>
+      </form>
+    {% else %}
+      <p>No members found for this classroom.</p>
+    {% endif %}
+  </div>
+
+  <script>
+    document.getElementById('submit-attendance')?.addEventListener('click', async function(){
+      const entries = [];
+      const form = document.getElementById('attendance-form');
+      if(!form) return;
+      for(const el of form.querySelectorAll('select')){
+        const name = el.name; // status_<id>
+        const user_id = parseInt(name.split('_')[1], 10);
+        entries.push({user_id: user_id, status: el.value});
+      }
+      try{
+        const token = (document.cookie.match('(^|;)\\s*csrf_token\\s*=\\s*([^;]+)')||[]).pop() || '';
+        const res = await fetch('/api/classrooms/{{ classroom.id }}/attendance', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRF-Token': token},
+          body: JSON.stringify({entries: entries})
+        });
+        const j = await res.json();
+        if(j.ok) {
+          alert('Attendance saved');
+          window.location.reload();
+        } else {
+          alert('Failed to save attendance');
+        }
+      } catch(e){
+        alert('Error saving attendance: '+e);
+      }
+    });
+  </script>
+</body>
+</html>

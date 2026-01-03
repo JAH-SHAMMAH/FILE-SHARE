@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card presentation-detail">
+  <div class="presentation-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <!-- owner summary shown before title -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <a href="/users/{{ p.owner_username }}" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
+          {% if p.owner_avatar %}
+            <img src="/download/{{ p.owner_avatar }}?inline=1" alt="{{ p.owner_username }} avatar" style="width:40px;height:40px;border-radius:10px;object-fit:cover;" onerror="this.style.display='none'" />
+          {% else %}
+            <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef1ff,#ffd9a8);font-weight:700;color:#1f1f3f">{{ (p.owner_username or 'U')[:1].upper() }}</div>
+          {% endif %}
+          <div style="line-height:1">
+            <div style="font-weight:700">{{ p.owner_username or (p.author or 'Unknown') }}</div>
+            <div class="muted" style="font-size:12px">{{ owner_presentation_count or 0 }} presentations · {{ followers_count or 0 }} followers</div>
+          </div>
+        </a>
+      </div>
+      <h1>{{ p.title }}</h1>
+      <p class="muted presentation-short-desc" style="margin-top:8px;">{{ p.description or '' }}</p>
+      <p class="muted" style="margin-top:6px;"><strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations · <strong id="view-count">{{ p.views or 0 }}</strong> views</p>
+    </div>
+    <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+        {% if original_url %}
+          <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
+        {% endif %}
+        {% if p.owner_id %}
+          <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username }}" data-email="{{ p.owner_email }}" data-bypass="1">Contact Owner</button>
+          {% if current_user and current_user.username != p.owner_username %}
+            <button class="btn btn--ghost follow-btn" data-username="{{ p.owner_username }}">{% if is_following %}Unfollow{% else %}Follow{% endif %}</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <!-- Music player for this presentation -->
+  <div id="music-card" style="margin-top:12px;display:{% if p.music_url %}block{% else %}none{% endif %};">
+    {% if p.music_url %}
+      {% set mu = p.music_url %}
+      {% if mu.lower().endswith('.mp3') or mu.lower().endswith('.m4a') or mu.lower().endswith('.ogg') or mu.lower().endswith('.wav') %}
+        <audio controls style="width:100%;max-width:680px;">
+          <source src="{{ mu }}">Your browser does not support the audio element.
+        </audio>
+      {% elif 'spotify.com' in mu %}
+        <iframe style="border-radius:12px;width:100%;max-width:680px;height:152px;" src="{{ mu|replace('open.spotify.com/', 'open.spotify.com/embed/') }}" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+      {% else %}
+        <audio controls style="width:100%;max-width:680px;">
+          <source src="{{ mu }}">Your browser does not support the audio element.
+        </audio>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <!-- Owner control: set/clear music URL -->
+  {% if current_user and current_user.id == p.owner_id %}
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+    <input id="presentation-music-input" placeholder="Paste Spotify/Apple/direct MP3 URL" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--border);" value="{{ p.music_url or '' }}" />
+    <button id="presentation-music-save" class="btn">Save</button>
+    <button id="presentation-music-clear" class="btn btn--ghost">Clear</button>
+  </div>
+  {% endif %}
+  {% if p.music_url and 'spotify.com' in (p.music_url or '') %}
+  <div style="margin-top:8px;">
+    <button id="spotify-play-btn" class="btn">Play via Spotify</button>
+    <span id="spotify-status" class="muted" style="margin-left:8px;"></span>
+  </div>
+  {% endif %}
+  <!-- owner summary moved above title -->
+
+  <!-- Primary actions row placed just before the slide viewer -->
+  <div class="presentation-actions" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="like-btn btn {% if is_liked %}liked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_liked else 'false' }}">👍 <span id="like-count">{{ likes or 0 }}</span></button>
+      <button class="bookmark-btn btn {% if is_bookmarked %}bookmarked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_bookmarked else 'false' }}" title="Save for later">Save</button>
+      <a class="btn btn--ghost" href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.url_for('view_presentation', presentation_id=p.id) }}" target="_blank">Share</a>
+      {% if p.music_url %}
+        <button id="music-toggle-btn" class="btn btn--ghost" title="Show/hide presentation music">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M9 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm0-10V4.75a.75.75 0 0 1 .576-.73l8-2A.75.75 0 0 1 18.5 2.75V8.5a2.5 2.5 0 1 1-1.5-2.291V4.28l-6.5 1.625V16.5a2.5 2.5 0 1 1-1.5-2.291V8.5Z" />
+          </svg>
+        </button>
+      {% endif %}
+      {% if current_user %}
+        <button id="ai-summary-btn" class="btn btn--primary" title="Summarize this presentation with AI">Summarize (AI)</button>
+        <button id="ai-quiz-btn" class="btn btn--ghost" title="Generate quiz from this presentation">Generate Quiz</button>
+        <button id="ai-flash-btn" class="btn btn--ghost" title="Generate flashcards from this presentation">Flashcards</button>
+        <button id="ai-mind-btn" class="btn btn--ghost" title="Generate mind map from this presentation">Mind Map</button>
+      {% else %}
+        <button class="btn btn--primary" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Summarize (AI)</button>
+        <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Generate Quiz</button>
+        <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Flashcards</button>
+        <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Mind Map</button>
+      {% endif %}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+        {% if current_user and current_user.id == p.owner_id %}
+        <button id="delete-presentation-btn" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">
+          Delete presentation
+        </button>
+        {% endif %}
+      <button id="save-to-drive" class="btn-icon" title="Save to Drive">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Two-column viewer: thumbnails left, large viewer right -->
+  <div class="presentation-layout" style="margin-top:18px">
+    <aside class="presentation-thumbs" id="presentation-thumbs" aria-label="Slides thumbnails">
+      <!-- thumbnails injected here -->
+    </aside>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      {# hidden anchors used by the JS fallback when no thumbnails are available #}
+      <a id="viewer-download" href="{{ viewer_url or original_url or '#' }}" style="display:none;">Download</a>
+      <a id="viewer-open-original" href="{{ original_url or '#' }}" style="display:none;">Open original</a>
+
+      <div class="viewer-toolbar" id="viewer-toolbar">
+        <div class="controls">
+          <button id="prev-page" class="viewer-nav-btn">◀ Prev</button>
+          <button id="next-page" class="viewer-nav-btn">Next ▶</button>
+        </div>
+        <div class="page-indicator" id="page-indicator">— / —</div>
+        <div class="controls">
+          <button id="zoom-out" class="viewer-nav-btn" title="Zoom out">−</button>
+          <button id="zoom-in" class="viewer-nav-btn" title="Zoom in">+</button>
+        </div>
+      </div>
+
+      <div class="presentation-main-viewer" id="presentation-main-viewer" role="region" aria-label="Slide viewer">
+        {# For original PDFs, use the inline PDF iframe. For converted PPT/PPTX
+           we rely on the image-based slide viewer so content is always visible. #}
+        {% if viewer_url %}
+        <!-- When a viewer_url is available (original PDF or converted PDF), render it inline. -->
+        <object id="initial-viewer-object" data="{{ viewer_url }}" type="application/pdf" aria-label="Presentation preview" style="width:100%;height:480px;border:none;display:block;">
+          <iframe
+            id="initial-viewer-iframe"
+            src="{{ viewer_url }}"
+            style="width:100%;height:480px;border:none;"
+            loading="lazy"
+          ></iframe>
+        </object>
+        {% elif original_url %}
+        <div class="preview-message muted" id="viewer-placeholder">
+          No slide preview yet. <a href="{{ original_url }}" target="_blank">Open or download the original file</a>.
+        </div>
+        {% else %}
+        <div class="preview-message muted" id="viewer-placeholder">No preview available for this file.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# If conversion is queued for non-PDF uploads, show a clearer placeholder and
+     ensure the client-side viewer knows to poll for thumbnails immediately. #}
+  {% if conversion_status == 'queued' %}
+  <script>
+    (function(){
+      try{
+        const ph = document.getElementById('viewer-placeholder');
+        if(ph) ph.textContent = 'Generating previews… Preview will appear here shortly.';
+      }catch(e){}
+    })();
+  </script>
+  {% endif %}
+
+  <div class="presentation-desc" style="margin-top:18px">
+    <!-- Keep AI helpers and admin preview only; main description is shown above -->
+    <h3 class="sr-only">About this presentation</h3>
+    <div id="ai-summary-container" style="margin-top:12px;display:none;">
+      <h4>AI Summary</h4>
+      <div id="ai-summary-content" class="muted" style="white-space:pre-wrap"></div>
+      <div id="ai-summary-status" class="muted" style="margin-top:6px"></div>
+    </div>
+      <div id="ai-quiz-container" style="margin-top:12px;display:none;">
+        <h4>AI Quiz</h4>
+        <div id="ai-quiz-content" class="muted" style="white-space:pre-wrap"></div>
+        <div id="ai-quiz-status" class="muted" style="margin-top:6px"></div>
+      </div>
+      <div id="ai-flash-container" style="margin-top:12px;display:none;">
+        <h4>Flashcards</h4>
+        <div id="ai-flash-content" class="muted" style="white-space:pre-wrap"></div>
+        <div id="ai-flash-status" class="muted" style="margin-top:6px"></div>
+      </div>
+      <div id="ai-mind-container" style="margin-top:12px;display:none;">
+        <h4>Mind Map</h4>
+        <div id="ai-mind-content" class="muted" style="white-space:pre-wrap"></div>
+        <div id="ai-mind-status" class="muted" style="margin-top:6px"></div>
+      </div>
+    <div id="admin-preview-container" style="margin-top:12px;">
+      <h4>Generated Previews</h4>
+      <div id="admin-preview-list" class="muted">Loading previews…</div>
+    </div>
+  </div>
+
+  <section class="comments" style="margin-top:18px">
+    <h3>Comments</h3>
+    <ul>
+      {% for c in comments %}
+      <li>
+        <strong><a href="/profile/{{ c.user_id }}" style="color:inherit;text-decoration:underline;">{{ comment_users.get(c.user_id) or ('User #' ~ c.user_id) }}</a></strong>
+        <small class="muted">{{ c.created_at|humanize_comment_date }}</small>
+        <div>{{ c.content }}</div>
+      </li>
+      {% else %}
+      <li>No comments yet.</li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/presentations/{{ p.id }}/comment">
+      <textarea name="content" required placeholder="Add a public comment" rows="4"></textarea>
+      <div class="auth-actions"><button class="btn">Post comment</button></div>
+    </form>
+  </section>
+</div>
+
+  <!-- Delete confirmation modal (owner only) -->
+  {% if current_user and current_user.id == p.owner_id %}
+  <div id="delete-modal" style="position:fixed;inset:0;background:rgba(15,23,42,0.7);display:none;align-items:center;justify-content:center;z-index:1000;">
+    <div style="background:#fff;border-radius:12px;max-width:420px;width:90%;padding:20px;box-shadow:0 20px 40px rgba(15,23,42,0.35);">
+      <h3 style="margin-top:0;margin-bottom:8px;">Delete this presentation?</h3>
+      <p class="muted" style="margin:0 0 16px 0;">This will permanently delete "{{ p.title }}" and its files. This action cannot be undone.</p>
+      <form method="post" action="/presentations/{{ p.id }}/delete" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <button type="button" id="delete-cancel-btn" class="btn btn--ghost">Cancel</button>
+        <button type="submit" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global presentation metadata for this page
+const presentationId = "{{ p.id }}";
+const presentationFilename = "{{ p.filename or '' }}";
+
+// Owner music controls: save/clear music URL and toggle visibility
+(function(){
+  const input = document.getElementById('presentation-music-input');
+  const saveBtn = document.getElementById('presentation-music-save');
+  const clearBtn = document.getElementById('presentation-music-clear');
+  const musicCard = document.getElementById('music-card');
+  const toggleBtn = document.getElementById('music-toggle-btn');
+  if (!input || !saveBtn) return;
+
+  async function updateMusic(url){
+    saveBtn.disabled = true;
+    try{
+      const res = await fetch(`/presentations/${presentationId}/music`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ music_url: url })
+      });
+      if (!res.ok){
+        let msg = 'Failed to save music.';
+        try{ const j = await res.json(); if(j && j.detail) msg = j.detail; }catch(e){}
+        alert(msg);
+        return;
+      }
+      // reload so server-rendered audio/iframe matches new URL
+      window.location.reload();
+    }catch(e){
+      alert('Network error while saving music.');
+    }finally{
+      saveBtn.disabled = false;
+    }
+  }
+
+  saveBtn.addEventListener('click', ()=>{
+    const url = (input.value || '').trim();
+    updateMusic(url);
+  });
+
+  if (clearBtn){
+    clearBtn.addEventListener('click', ()=>{
+      input.value = '';
+      updateMusic('');
+    });
+  }
+
+  if (toggleBtn && musicCard){
+    toggleBtn.addEventListener('click', ()=>{
+      const visible = musicCard.style.display !== 'none';
+      musicCard.style.display = visible ? 'none' : 'block';
+    });
+  }
+})();
+
+// Shared AI poller helper used by summary/quiz/flashcards/mindmap
+function makePoller(taskType, contentEl, statusEl){
+  return async function pollResult(){
+    statusEl.textContent = 'Waiting for result...';
+    const start = Date.now();
+    while(Date.now() - start < 120000){
+      try{
+        const r = await fetch(`/api/presentations/${presentationId}/ai/results`, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+        if(r.ok){
+          const j = await r.json();
+          const res = j.results && j.results.find(x=>x.task_type === taskType && x.result);
+          if(res){
+            contentEl.textContent = res.result;
+            statusEl.textContent = '';
+            (contentEl.parentElement || contentEl).style.display = '';
+            return true;
+          }
+        }
+      }catch(e){ console.warn(e); }
+      await new Promise(r=>setTimeout(r, 2000));
+    }
+    statusEl.textContent = 'Timed out waiting for AI result.';
+    return false;
+  }
+}
+
+// Viewer script: fetch thumbnails and render thumbnails + main viewer with navigation
+(function(){
+  const thumbsEl = document.getElementById('presentation-thumbs');
+  const mainEl = document.getElementById('presentation-main-viewer');
+  const placeholder = document.getElementById('viewer-placeholder');
+  const pageIndicator = document.getElementById('page-indicator');
+  const prevBtn = document.getElementById('prev-page');
+  const nextBtn = document.getElementById('next-page');
+  const viewerDownload = document.getElementById('viewer-download');
+  const viewerOpen = document.getElementById('viewer-open-original');
+  const zoomInBtn = document.getElementById('zoom-in');
+  const zoomOutBtn = document.getElementById('zoom-out');
+
+  // if core elements are missing, skip viewer initialization to avoid JS errors
+  if (!thumbsEl || !mainEl || !pageIndicator || !prevBtn || !nextBtn) return;
+
+  // Keep the inline PDF iframe only for true PDF uploads. For converted
+  // PPT/PPTX, we prefer the image-based slide viewer so users always see
+  // content even if their browser cannot render PDFs inline.
+  const iframe = document.getElementById('initial-viewer-iframe');
+  let hasIframe = false;
+  try {
+    const fname = (presentationFilename || '').toLowerCase();
+    if (fname.endsWith('.pdf') && iframe) {
+      hasIframe = true;
+    }
+  } catch (e) {}
+
+  let thumbnails = [];
+  let currentIndex = 0;
+  let zoom = 1;
+  let currentImg = null;
+
+  function setIndicator() {
+    pageIndicator.textContent = (thumbnails.length ? (currentIndex+1) : '—') + ' / ' + (thumbnails.length || '—');
+    prevBtn.disabled = currentIndex <= 0;
+    nextBtn.disabled = currentIndex >= (thumbnails.length-1);
+  }
+
+  function applyZoom(delta) {
+    if (typeof delta === 'number') {
+      zoom = Math.max(0.5, Math.min(4, zoom + delta));
+    }
+    if (currentImg) {
+      currentImg.style.maxWidth = 'none';
+      currentImg.style.width = (zoom * 100) + '%';
+      mainEl.style.overflow = zoom > 1 ? 'auto' : 'hidden';
+    }
+  }
+
+  async function fetchThumbnails(){
+    try{
+      const res = await fetch(`/presentations/${presentationId}/thumbnails`);
+      if (!res.ok) throw new Error('no thumbs');
+      const data = await res.json();
+      thumbnails = data.thumbnails || [];
+      if (thumbnails.length) {
+        renderThumbs();
+        showPage(0);
+      } else if (data.status === 'queued') {
+        await pollThumbnails();
+      } else {
+        renderFallback();
+      }
+    }catch(e){
+      console.warn('thumbnails fetch failed', e);
+      renderFallback();
+    }
+  }
+
+  function renderThumbs(){
+    thumbsEl.innerHTML = '';
+    thumbnails.forEach((u,i)=>{
+      const wrap = document.createElement('div');
+      wrap.className = 'presentation-thumb-wrap';
+      wrap.style.marginBottom = '10px';
+
+      const img = document.createElement('img');
+      img.className = 'presentation-thumb';
+      img.src = u;
+      img.alt = 'Page '+(i+1);
+      img.dataset.index = i;
+      img.loading = 'lazy';
+      img.addEventListener('click', ()=> showPage(i));
+
+      const badge = document.createElement('div');
+      badge.className = 'presentation-thumb__badge';
+      badge.textContent = (i+1)+' / '+thumbnails.length;
+
+      wrap.appendChild(img);
+      wrap.appendChild(badge);
+      thumbsEl.appendChild(wrap);
+    });
+  }
+
+  function renderFallback(){
+    thumbsEl.innerHTML = '';
+    mainEl.innerHTML = '';
+    const link = document.createElement('a');
+    link.className = 'btn';
+    link.href = viewerDownload.href || '#';
+    link.textContent = 'Download / Open original';
+    link.target = '_blank';
+    mainEl.appendChild(link);
+    pageIndicator.textContent = '— / —';
+  }
+
+  async function showPage(index){
+    if (!thumbnails[index]) return;
+    currentIndex = index;
+    // update active thumb
+    thumbsEl.querySelectorAll('.presentation-thumb').forEach(el=>el.classList.remove('active'));
+    const el = thumbsEl.querySelector('.presentation-thumb[data-index="'+index+'"]');
+    if (el) el.classList.add('active');
+
+    // Always prefer the image-based slide viewer so content is
+    // readable regardless of the browser's PDF plugin behavior.
+    mainEl.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = thumbnails[index];
+    img.alt = 'Page '+(index+1);
+    img.style.display = 'block';
+    currentImg = img;
+    mainEl.appendChild(img);
+    applyZoom(0);
+    setIndicator();
+  }
+
+  async function pollThumbnails(){
+    const start = Date.now();
+    const timeoutMs = 60000; // 60s
+    if (placeholder) {
+      placeholder.textContent = 'Generating previews…';
+    }
+    while(Date.now() - start < timeoutMs){
+      try{
+        const t = await fetch(`/presentations/${presentationId}/thumbnails`, { credentials: 'include' });
+        if(t.ok){
+          const tj = await t.json();
+          if(tj.thumbnails && tj.thumbnails.length){
+            thumbnails = tj.thumbnails;
+            renderThumbs();
+            showPage(0);
+            return;
+          }
+        }
+      }catch(e){}
+      await new Promise(r=>setTimeout(r, 2000));
+    }
+    // timed out waiting; fall back to simple download link
+    renderFallback();
+  }
+
+  prevBtn.addEventListener('click', ()=> { if (currentIndex>0) showPage(currentIndex-1); });
+  nextBtn.addEventListener('click', ()=> { if (currentIndex < thumbnails.length-1) showPage(currentIndex+1); });
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener('click', ()=> applyZoom(0.25));
+  }
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener('click', ()=> applyZoom(-0.25));
+  }
+  window.addEventListener('keydown',(e)=>{ if (e.key === 'ArrowLeft') { if (currentIndex>0) showPage(currentIndex-1); } else if (e.key === 'ArrowRight') { if (currentIndex < thumbnails.length-1) showPage(currentIndex+1); }});
+
+  // initialize
+  fetchThumbnails();
+})();
+// AI summary button: enqueue and poll for results
+(function(){
+  const btn = document.getElementById('ai-summary-btn');
+  const container = document.getElementById('ai-summary-container');
+  const content = document.getElementById('ai-summary-content');
+  const status = document.getElementById('ai-summary-status');
+  if(!btn) return;
+  const summaryPoll = makePoller('summary', content, status);
+  btn.addEventListener('click', async ()=>{
+    btn.disabled = true;
+    btn.textContent = 'Queued…';
+    container.style.display = '';
+    content.textContent = '';
+    status.textContent = 'Requesting summary…';
+    try{
+      const r = await fetch(`/api/presentations/${presentationId}/ai/summary`, { method: 'POST', credentials: 'include', headers: { 'Accept': 'application/json' } });
+      if(!r.ok){
+        let txt = '';
+        try{ txt = await r.text(); }catch(e){}
+        status.textContent = `Request failed: ${r.status} ${txt}`;
+        throw new Error('enqueue failed');
+      }
+      btn.textContent = 'Queued — waiting';
+      await summaryPoll();
+      btn.textContent = 'Summarize (AI)';
+      btn.disabled = false;
+    }catch(e){
+      status.textContent = 'Failed to request AI summary.';
+      btn.disabled = false;
+      btn.textContent = 'Summarize (AI)';
+    }
+  });
+})();
+// AI Quiz / Flashcards / Mind Map buttons
+(function(){
+  const qbtn = document.getElementById('ai-quiz-btn');
+  const qcont = document.getElementById('ai-quiz-container');
+  const qcontent = document.getElementById('ai-quiz-content');
+  const qstatus = document.getElementById('ai-quiz-status');
+  const fbtn = document.getElementById('ai-flash-btn');
+  const fcont = document.getElementById('ai-flash-container');
+  const fcontent = document.getElementById('ai-flash-content');
+  const fstatus = document.getElementById('ai-flash-status');
+  const mbtn = document.getElementById('ai-mind-btn');
+  const mcont = document.getElementById('ai-mind-container');
+  const mcontent = document.getElementById('ai-mind-content');
+  const mstatus = document.getElementById('ai-mind-status');
+
+  if(qbtn){
+    const poll = makePoller('quiz', qcontent, qstatus);
+    qbtn.addEventListener('click', async ()=>{
+      qbtn.disabled = true; qbtn.textContent = 'Queued…'; qcont.style.display = '';
+      qcontent.textContent = ''; qstatus.textContent = 'Requesting quiz…';
+      try{
+        const r = await fetch(`/api/presentations/${presentationId}/ai/quiz`, { method: 'POST', credentials: 'include' });
+        if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; qstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
+        await poll();
+      }catch(e){ qstatus.textContent = 'Failed to request AI quiz.' }
+      qbtn.disabled = false; qbtn.textContent = 'Generate Quiz';
+    });
+  }
+
+  if(fbtn){
+    const poll = makePoller('flashcards', fcontent, fstatus);
+    fbtn.addEventListener('click', async ()=>{
+      fbtn.disabled = true; fbtn.textContent = 'Queued…'; fcont.style.display = '';
+      fcontent.textContent = ''; fstatus.textContent = 'Requesting flashcards…';
+      try{
+        const r = await fetch(`/api/presentations/${presentationId}/ai/flashcards`, { method: 'POST', credentials: 'include' });
+        if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; fstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
+        await poll();
+      }catch(e){ fstatus.textContent = 'Failed to request flashcards.' }
+      fbtn.disabled = false; fbtn.textContent = 'Flashcards';
+    });
+  }
+
+  if(mbtn){
+    const poll = makePoller('mindmap', mcontent, mstatus);
+    mbtn.addEventListener('click', async ()=>{
+      mbtn.disabled = true; mbtn.textContent = 'Queued…'; mcont.style.display = '';
+      mcontent.textContent = ''; mstatus.textContent = 'Requesting mind map…';
+      try{
+        const r = await fetch(`/api/presentations/${presentationId}/ai/mindmap`, { method: 'POST', credentials: 'include' });
+        if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; mstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
+        await poll();
+      }catch(e){ mstatus.textContent = 'Failed to request mind map.' }
+      mbtn.disabled = false; mbtn.textContent = 'Mind Map';
+    });
+  }
+})();
+// Admin preview list (owner only)
+(function(){
+  const listEl = document.getElementById('admin-preview-list');
+  if(!listEl) return;
+  async function loadPreviews(){
+    listEl.textContent = 'Loading previews…';
+    try{
+      const r = await fetch(`/presentations/${presentationId}/thumbnails`, { credentials: 'include' });
+      if(!r.ok){ listEl.textContent = 'No previews available'; return; }
+      const j = await r.json();
+      const out = [];
+      if(j.thumbnails && j.thumbnails.length){
+        j.thumbnails.forEach(u=>{ out.push(`<img src="${u}" alt="thumb" style="max-width:160px;margin-right:6px;margin-bottom:6px;"/>`); });
+      }
+      // check converted PDF (GET is fine and avoids HEAD 405 issues)
+      const rp = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { credentials: 'include' });
+      if(rp && rp.ok){
+        out.push(`<div><a href="/presentations/${presentationId}/converted_pdf">Download converted PDF</a></div>`);
+      }
+      if(out.length) listEl.innerHTML = out.join(''); else listEl.textContent = 'Preview will be ready after conversion.';
+    }catch(e){ listEl.textContent = 'Failed to load previews'; }
+  }
+  loadPreviews();
+})();
+// Spotify Web Playback SDK integration for presenters who connected Spotify
+(function(){
+  const playBtn = document.getElementById('spotify-play-btn');
+  const status = document.getElementById('spotify-status');
+  if(!playBtn) return;
+  function toSpotifyUri(url){
+    try{
+      const u = new URL(url);
+      const parts = u.pathname.split('/').filter(Boolean);
+      const id = parts.pop();
+      const kind = parts.pop();
+      if(kind && id) return `spotify:${kind}:${id}`;
+    }catch(e){}
+    return null;
+  }
+  playBtn.addEventListener('click', async ()=>{
+    status.textContent = 'Initializing…';
+    try{
+      const res = await fetch('/auth/spotify/token');
+      if(!res.ok) throw new Error('not connected');
+      const data = await res.json();
+      const token = data.access_token;
+      // load SDK if needed
+      if(!window.Spotify){
+        const s = document.createElement('script'); s.src='https://sdk.scdn.co/spotify-player.js'; document.head.appendChild(s);
+        await new Promise(r=>{ let t=0; (function wait(){ if(window.Spotify) return r(); t++; if(t>50) return r(); setTimeout(wait,100); })(); });
+      }
+      const player = new window.Spotify.Player({ name: 'Slideshare Player', getOAuthToken: cb=>cb(token) });
+      player.addListener('initialization_error', ({message})=>{ console.error(message); status.textContent='Init error'; });
+      player.addListener('authentication_error', ({message})=>{ console.error(message); status.textContent='Auth error'; });
+      player.addListener('account_error', ({message})=>{ console.error(message); status.textContent='Account error'; });
+      player.addListener('player_state_changed', state=>{ /* no-op */ });
+      let deviceId = null;
+      player.addListener('ready', ({ device_id }) => { deviceId = device_id; (async ()=>{
+        // request play
+        const mu = '{{ p.music_url }}';
+        const uri = toSpotifyUri(mu);
+        if(!uri){ status.textContent='Invalid Spotify URL'; return; }
+        try{
+          await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device_id}`, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type':'application/json' }, body: JSON.stringify({ uris: [uri] }) });
+          status.textContent='Playing';
+        }catch(e){ console.error(e); status.textContent='Playback failed'; }
+      })(); });
+      await player.connect();
+    }catch(e){ console.error(e); status.textContent='Not connected'; }
+  });
+})();
+// Presentation music save/clear handlers
+(function(){
+  const saveBtn = document.getElementById('presentation-music-save');
+  const clearBtn = document.getElementById('presentation-music-clear');
+  const input = document.getElementById('presentation-music-input');
+  const musicCard = document.getElementById('music-card');
+  const musicToggle = document.getElementById('music-toggle-btn');
+
+  // helper: build player markup but do not change visibility
+  function buildMusicContent(url){
+    if(!musicCard){
+      return;
+    }
+    musicCard.innerHTML = '';
+    const trimmed = (url || '').trim();
+    if(!trimmed){
+      musicCard.style.display = 'none';
+      return;
+    }
+    const lower = trimmed.toLowerCase();
+    if(lower.endsWith('.mp3') || lower.endsWith('.m4a') || lower.endsWith('.ogg') || lower.endsWith('.wav')){
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.style.width = '100%';
+      audio.style.maxWidth = '680px';
+      const src = document.createElement('source');
+      src.src = trimmed;
+      audio.appendChild(src);
+      audio.appendChild(document.createTextNode('Your browser does not support the audio element.'));
+      musicCard.appendChild(audio);
+    }else if(trimmed.includes('spotify.com')){
+      const iframe = document.createElement('iframe');
+      iframe.style.borderRadius = '12px';
+      iframe.style.width = '100%';
+      iframe.style.maxWidth = '680px';
+      iframe.style.height = '152px';
+      iframe.src = trimmed.replace('open.spotify.com/', 'open.spotify.com/embed/');
+      iframe.frameBorder = '0';
+      iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+      iframe.loading = 'lazy';
+      musicCard.appendChild(iframe);
+    }else{
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.style.width = '100%';
+      audio.style.maxWidth = '680px';
+      audio.src = trimmed;
+      audio.appendChild(document.createTextNode('Your browser does not support the audio element.'));
+      musicCard.appendChild(audio);
+    }
+  }
+
+  if(musicToggle && musicCard){
+    musicToggle.addEventListener('click', ()=>{
+      const visible = musicCard.style.display !== 'none';
+      if(visible){
+        musicCard.style.display = 'none';
+      }else{
+        // lazily build content from current input value if empty
+        if(!musicCard.innerHTML.trim() && input && input.value.trim()){
+          buildMusicContent(input.value.trim());
+        }
+        musicCard.style.display = '';
+      }
+    });
+  }
+
+  if(!saveBtn || !input) return;
+  saveBtn.addEventListener('click', async ()=>{
+    try{
+      const url = input.value.trim();
+      const res = await fetch(`/presentations/{{ p.id }}/music`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ music_url: url }) });
+      if(!res.ok) throw new Error('save failed');
+      // update underlying content but do not auto-open; user controls via music icon
+      buildMusicContent(url);
+    }catch(e){ alert('Failed to save music'); }
+  });
+  if(clearBtn){
+    clearBtn.addEventListener('click', async ()=>{
+      try{
+        const res = await fetch(`/presentations/{{ p.id }}/music`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ music_url: '' }) });
+        if(!res.ok) throw new Error('clear failed');
+        input.value = '';
+        buildMusicContent('');
+      }catch(e){ alert('Failed to clear music'); }
+    });
+  }
+})();
+
+// Delete presentation modal (owner only)
+(function(){
+  const trigger = document.getElementById('delete-presentation-btn');
+  const modal = document.getElementById('delete-modal');
+  const cancel = document.getElementById('delete-cancel-btn');
+  if(!trigger || !modal || !cancel) return;
+  trigger.addEventListener('click', ()=>{
+    modal.style.display = 'flex';
+  });
+  cancel.addEventListener('click', ()=>{
+    modal.style.display = 'none';
+  });
+  modal.addEventListener('click', (e)=>{
+    if(e.target === modal){
+      modal.style.display = 'none';
+    }
+  });
+})();
+</script>
+{% endblock %}

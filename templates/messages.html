@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+
+{% block title %}Messages · 247FILE SHARE{% endblock %}
+
+{% block content %}
+<section class="fs-section">
+  <div class="panel-head">
+    <h1 class="section-title">Messages</h1>
+    <p class="muted">Direct messages between you and other users.</p>
+  </div>
+  <div class="messages-layout">
+    <aside class="messages-sidebar">
+      <div class="messages-filters-row">
+        <button type="button" class="messages-filter-btn is-active" data-messages-filter="inbox">Inbox</button>
+        <button type="button" class="messages-filter-btn" data-messages-filter="mutuals">Mutuals</button>
+        <button type="button" class="messages-filter-btn" data-messages-filter="requests">Requests</button>
+      </div>
+
+      <div id="messages-list-inbox" class="messages-list" data-messages-list="inbox">
+        {% if conversations and conversations|length %}
+          {% for c in conversations %}
+          <button type="button" class="btn btn--ghost messages-convo messages-convo--inbox {% if c.unread %}messages-convo--inbox-unread{% endif %}" data-open-chat="{{ c.other_id }}">
+            <div class="messages-convo-inner">
+              <div class="messages-convo-avatar messages-convo-avatar--inbox">
+                {{ (c.other_username or 'U')[:2].upper() }}
+              </div>
+              <div class="messages-convo-main">
+                <div class="messages-convo-name">{{ c.other_username or ('User #' ~ c.other_id) }}</div>
+                <div class="messages-convo-snippet muted">{{ c.last_content or '' }}</div>
+              </div>
+              {% if c.unread %}
+              <span class="messages-convo-badge messages-convo-badge--inbox">{{ c.unread }}</span>
+              {% endif %}
+            </div>
+          </button>
+          {% endfor %}
+        {% else %}
+          <p class="muted" style="font-size:13px;">No inbox conversations yet.</p>
+        {% endif %}
+      </div>
+
+      <div id="messages-list-mutuals" class="messages-list" data-messages-list="mutuals" style="display:none;">
+        {% if mutual_conversations and mutual_conversations|length %}
+          {% for c in mutual_conversations %}
+          <button type="button" class="btn btn--ghost messages-convo messages-convo--inbox" data-open-chat="{{ c.other_id }}">
+            <div class="messages-convo-inner">
+              <div class="messages-convo-avatar messages-convo-avatar--inbox">
+                {{ (c.other_username or 'U')[:2].upper() }}
+              </div>
+              <div class="messages-convo-main">
+                <div class="messages-convo-name">{{ c.other_username or ('User #' ~ c.other_id) }}</div>
+                <div class="messages-convo-snippet muted">{{ c.last_content or '' }}</div>
+              </div>
+            </div>
+          </button>
+          {% endfor %}
+        {% else %}
+          <p class="muted" style="font-size:13px;">No mutual conversations yet.</p>
+        {% endif %}
+      </div>
+
+      <div id="messages-list-requests" class="messages-list" data-messages-list="requests" style="display:none;">
+        {% if request_conversations and request_conversations|length %}
+          {% for c in request_conversations %}
+          <button type="button" class="btn btn--ghost messages-convo messages-convo--request {% if c.unread %}messages-convo--request-unread{% endif %}" data-open-chat="{{ c.other_id }}">
+            <div class="messages-convo-inner">
+              <div class="messages-convo-avatar messages-convo-avatar--request">
+                {{ (c.other_username or 'U')[:2].upper() }}
+              </div>
+              <div class="messages-convo-main">
+                <div class="messages-convo-name">{{ c.other_username or ('User #' ~ c.other_id) }}</div>
+                <div class="messages-convo-snippet muted">{{ c.last_content or '' }}</div>
+              </div>
+              {% if c.unread %}
+              <span class="messages-convo-badge messages-convo-badge--request">{{ c.unread }}</span>
+              {% endif %}
+            </div>
+          </button>
+          {% endfor %}
+        {% else %}
+          <p class="muted" style="font-size:13px;">No message requests yet.</p>
+        {% endif %}
+      </div>
+    </aside>
+
+    <div class="messages-empty-card">
+      <div class="messages-empty-inner">
+        <div class="messages-empty-label">
+          <span class="messages-empty-label-dot"></span>
+          Live chats
+        </div>
+        <h2 class="messages-empty-title">Your conversations live here.</h2>
+        <p class="messages-empty-subtitle">
+          Pick someone from your inbox on the left to jump into a thread, or start a fresh chat with a new contact. Messages stay synced across your sessions.
+        </p>
+        <div class="messages-empty-actions">
+          <button type="button" id="messages-open-launcher" class="messages-empty-cta-primary">New message</button>
+          <button type="button" id="messages-open-mutuals" class="messages-empty-cta-secondary">Message a mutual</button>
+          <div class="messages-empty-chip">
+            <span class="messages-empty-chip-dot"></span>
+            Typing indicators and read states coming soon
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest('[data-open-chat]');
+    if(!btn) return;
+    var uid = parseInt(btn.getAttribute('data-open-chat'));
+    if(!uid) return;
+    var labelEl = btn.querySelector('div > div > div');
+    var uname = labelEl ? labelEl.textContent.trim() : '';
+    // Create a temporary button that reuses the existing .btn-message handler in chat.js
+    var fake = document.createElement('button');
+    fake.type = 'button';
+    fake.className = 'btn-message';
+    fake.setAttribute('data-user-id', String(uid));
+    if(uname) fake.setAttribute('data-username', uname);
+    fake.style.display = 'none';
+    document.body.appendChild(fake);
+    fake.click();
+    document.body.removeChild(fake);
+  });
+
+  // Sidebar filter tabs: Inbox / Mutuals / Requests
+  (function(){
+    var buttons = document.querySelectorAll('.messages-filter-btn');
+    var lists = document.querySelectorAll('[data-messages-list]');
+    if (!buttons.length || !lists.length) return;
+    function setActive(kind){
+      buttons.forEach(function(b){
+        if (b.getAttribute('data-messages-filter') === kind){ b.classList.add('is-active'); }
+        else { b.classList.remove('is-active'); }
+      });
+      lists.forEach(function(list){
+        if (list.getAttribute('data-messages-list') === kind){ list.style.display = ''; }
+        else { list.style.display = 'none'; }
+      });
+    }
+    buttons.forEach(function(b){
+      b.addEventListener('click', function(){ setActive(b.getAttribute('data-messages-filter')); });
+    });
+    // ensure inbox is shown first on load
+    setActive('inbox');
+  })();
+
+  document.getElementById('messages-open-launcher')?.addEventListener('click', function(){
+    var launcher = document.getElementById('chat-launcher');
+    if(launcher) launcher.click();
+  });
+
+  document.getElementById('messages-open-mutuals')?.addEventListener('click', async function(){
+    try {
+      var res = await fetch('/api/contacts/mutuals');
+      if(!res.ok) return;
+      var data = await res.json();
+      if(!Array.isArray(data) || !data.length){
+        alert('No mutuals to show yet.');
+        return;
+      }
+      var lines = data.map(function(u){ return u.username + ' (#' + u.id + ')'; }).join('\n');
+      var choice = prompt('Choose a mutual to message by typing their numeric ID:\n\n' + lines);
+      if(!choice) return;
+      var id = parseInt(choice, 10);
+      if(!id) return;
+      var picked = data.find(function(u){ return u.id === id; });
+      if(!picked) return;
+      var fake = document.createElement('button');
+      fake.type = 'button';
+      fake.className = 'btn-message';
+      fake.setAttribute('data-user-id', String(picked.id));
+      if(picked.username) fake.setAttribute('data-username', picked.username);
+      fake.style.display = 'none';
+      document.body.appendChild(fake);
+      fake.click();
+      document.body.removeChild(fake);
+    } catch(err){
+      console.error('Failed to load mutuals', err);
+    }
+  });
+</script>
+{% endblock %}

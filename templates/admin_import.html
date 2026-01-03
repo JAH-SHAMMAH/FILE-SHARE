@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>Admin: Import Categories</h2>
+  <p class="muted">Run the categories import from <code>data/categories.json</code>.</p>
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+    <button id="run-import" class="btn">Run import</button>
+    <div id="import-status" class="muted"></div>
+  </div>
+  <div style="margin-top:12px;">
+    <small class="muted">This action inserts missing categories into the `Category` table and invalidates category count cache.</small>
+  </div>
+</div>
+
+<script>
+document.getElementById('run-import').addEventListener('click', async function(){
+  const status = document.getElementById('import-status');
+  status.textContent = 'Running...';
+  try{
+    const res = await fetch('/admin/import-categories', { method: 'POST', headers: { 'Accept': 'application/json' } });
+    if (!res.ok) {
+      const j = await res.json().catch(()=>({detail:'error'}));
+      status.textContent = 'Failed: ' + (j.detail || res.statusText);
+      return;
+    }
+    const data = await res.json();
+    status.textContent = 'Created: ' + (data.created || 0);
+  }catch(err){
+    status.textContent = 'Network error';
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %}Teaching Hub{% endblock %}
+
+{% block content %}
+  <section>
+    <h1 style="margin-bottom:12px;">Teaching Hub</h1>
+    <p class="muted" style="margin-bottom:20px;">Quick overview of your classrooms, students, and activity.</p>
+
+    {% if classrooms and classrooms|length %}
+      <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        {% for cls in classrooms %}
+          <article class="card" style="background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 12px 28px rgba(15,23,42,0.12);">
+            <h2 style="margin:0 0 6px 0;font-size:18px;">{{ cls.name }}</h2>
+            <p class="muted" style="margin:0 0 10px 0;">Classroom ID: {{ cls.id }}</p>
+            <dl style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:14px;">
+              <dt class="muted">Students</dt><dd>{{ cls.student_count }}</dd>
+              <dt class="muted">Assignments</dt><dd>{{ cls.assignment_count }}</dd>
+              <dt class="muted">Submissions</dt><dd>{{ cls.submission_count }}</dd>
+            </dl>
+            <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;">
+              <a class="btn" href="/classrooms/{{ cls.id }}/view" style="padding:8px 10px;font-size:13px;border-radius:999px;background:#111827;color:#f9fafb;text-decoration:none;">View classroom</a>
+              <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/attendance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Attendance</a>
+              <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/performance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class analytics</a>
+              <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/invite" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Invite students</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card" style="background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:20px;box-shadow:0 12px 28px rgba(15,23,42,0.10);">
+        <p>You don&apos;t have any classrooms yet.</p>
+        <p class="muted" style="margin-bottom:14px;">Create a classroom now to start inviting students and sharing materials.</p>
+        <a href="/teacher/classrooms/new" class="btn" style="padding:8px 14px;font-size:14px;text-decoration:none;">Create a classroom</a>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Choose your role · 247FileShare</title>
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+</head>
+<body class="auth-body">
+  <main class="auth-shell" aria-label="Choose your role">
+    <section class="role-page" style="width:100%;">
+      <div class="role-card">
+        <p class="role-eyebrow">Welcome{% if current_user and current_user.username %}, {{ current_user.username }}{% endif %}</p>
+        <h1 class="role-title">How will you use 247FileShare?</h1>
+        <p class="role-subtitle">You can change this later anytime in your account settings.</p>
+
+        <form method="post" action="/choose-role" class="role-chooser">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+          <div class="role-grid">
+            <button class="btn role-btn" name="role" value="passerby" type="submit">
+              <span class="role-btn__label">Passerby — just browsing</span>
+              <span class="role-btn__hint">Look around, save favorites, no pressure.</span>
+            </button>
+            <button class="btn role-btn" name="role" value="student" type="submit">
+              <span class="role-btn__label">Student / Learner</span>
+              <span class="role-btn__hint">Join classrooms, submit work, track progress.</span>
+            </button>
+            <button class="btn role-btn" name="role" value="teacher" type="submit">
+              <span class="role-btn__label">Educator / Teacher</span>
+              <span class="role-btn__hint">Share materials, manage classrooms, see analytics.</span>
+            </button>
+            <button class="btn role-btn" name="role" value="individual" type="submit">
+              <span class="role-btn__label">Individual</span>
+              <span class="role-btn__hint">Upload and share files with your own audience.</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>
+

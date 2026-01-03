@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>Saved presentations</h2>
+  <p class="muted">Presentations you've saved for later.</p>
+  <div style="margin-top:12px">
+    <div class="grid">
+      {% if presentations|length == 0 %}
+        <div class="empty">You haven't saved any presentations yet.</div>
+      {% endif %}
+      {% for p in presentations %}
+      <article class="card" data-pid="{{ p.id }}">
+        <a class="card__thumb" href="/presentations/{{ p.id }}">
+          {% if p.filename and p.filename.lower().endswith('.pdf') %}
+            <div class="thumb-frame-thumb" style="height:120px;display:flex;align-items:center;justify-content:center;background:#f7f7f7">PDF</div>
+          {% else %}
+            <img src="/presentations/{{ p.id }}/slide/0" alt="{{ p.title }}" />
+          {% endif %}
+        </a>
+        <div class="card__body">
+          <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
+          <div class="card__meta">Views: {{ p.views }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
+          <p class="card__desc">{{ p.description or '-' }}</p>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

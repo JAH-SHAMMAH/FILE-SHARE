@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ classroom.name }} — Classroom{% endblock %}
+
+{% block content %}
+  <section class="container" style="margin-top:18px;max-width:980px;">
+    <div id="classroom-meta" data-room-id="{{ classroom.id }}" style="display:none"></div>
+    <header style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <div>
+        <h1 class="section-title" style="margin:0 0 4px 0;">{{ classroom.name }}</h1>
+        <p class="muted" style="margin:0;">Group chat space for this classroom, plus materials and tools.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        {% if member and member.role in ['teacher','admin'] %}
+        <button id="teacher-menu-toggle" class="btn btn--ghost" style="padding:6px 10px;font-size:14px;display:inline-flex;align-items:center;gap:6px;" onclick="(function(){var p=document.getElementById('teacher-tools-panel');if(!p)return;p.style.display=(p.style.display==='none'?'block':'none');})();">
+          <span style="display:inline-block;width:16px;height:2px;background:currentColor;box-shadow:0 5px 0 currentColor,0 -5px 0 currentColor;"></span>
+          <span>Teacher tools</span>
+        </button>
+        {% endif %}
+        {% if member and member.role == 'student' %}
+        <div class="dropdown" style="position:relative;">
+          <button id="student-hamburger" class="btn btn--ghost" style="padding:6px 10px;font-size:14px;display:inline-flex;align-items:center;gap:6px;">
+            <span style="display:inline-block;width:16px;height:2px;background:currentColor;box-shadow:0 5px 0 currentColor,0 -5px 0 currentColor;"></span>
+            <span>Menu</span>
+          </button>
+          <div id="student-menu" style="display:none;position:absolute;right:0;top:110%;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:160px;z-index:10;">
+            <a href="#" id="view-members" style="display:block;padding:10px 16px;text-decoration:none;color:#222;font-size:14px;">View Members</a>
+            <a href="#" id="leave-group" style="display:block;padding:10px 16px;text-decoration:none;color:#c00;font-size:14px;">Leave Group</a>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </header>
+    <!-- Members Popup Modal -->
+    <div id="members-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.25);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;padding:24px 28px;border-radius:12px;max-width:400px;width:90vw;box-shadow:0 4px 24px rgba(0,0,0,0.12);position:relative;">
+        <button id="close-members-modal" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:20px;cursor:pointer;">&times;</button>
+        <h3 style="margin-top:0;">Classroom Members</h3>
+        <div id="members-list" style="margin-top:12px;min-height:40px;text-align:left;font-size:15px;">
+          Loading...
+        </div>
+      </div>
+    </div>
+
+    {% if member and member.role in ['teacher','admin'] %}
+    <section class="content-card" id="teacher-tools-panel" style="margin-bottom:14px;padding:10px 12px;display:none;">
+      <h2 style="margin:0 0 6px 0;font-size:14px;">Teacher tools</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/library" style="padding:6px 10px;font-size:13px;">Upload material</a>
+        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/assignments" style="padding:6px 10px;font-size:13px;">Assignments</a>
+        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/boot" style="padding:6px 10px;font-size:13px;">Boot students</a>
+      </div>
+    </section>
+    {% endif %}
+
+    <div>
+      <section class="content-card" style="padding:14px 16px;min-height:480px;display:flex;flex-direction:column;">
+        <h2 style="margin:0 0 10px 0;font-size:18px;">{{ classroom.name }}</h2>
+        <div id="classroom-chat-messages" style="flex:1 1 auto;min-height:260px;max-height:420px;overflow-y:auto;margin-top:6px;padding:8px 6px;border-radius:10px;border:1px solid var(--border);background:var(--surface-soft);">
+          {% if messages %}
+            {% for m in messages %}
+              {% set is_mine = (m.sender_id == member.user_id) %}
+              <div class="chat-row{% if is_mine %} chat-row--mine{% else %} chat-row--other{% endif %}" data-msg-id="{{ m.id }}">
+                <div class="chat-bubble{% if is_mine %} chat-bubble--mine{% else %} chat-bubble--other{% endif %}">
+                  <span style="font-weight:600;">
+                    {% if is_mine %}
+                      You
+                    {% else %}
+                      {{ m.sender_name or ('User ' ~ m.sender_id) }}
+                    {% endif %}
+                    :
+                  </span>
+                  <span>{{ m.content }}</span>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="muted" style="margin:0;font-size:13px;">No messages yet. Start the conversation!</p>
+          {% endif %}
+        </div>
+        <form id="classroom-chat-form" style="margin-top:10px;display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="classroom-chat-input" rows="2" placeholder="Message {{ classroom.name }}" style="flex:1 1 auto;resize:none;padding:8px 10px;border-radius:10px;border:1px solid var(--border);"></textarea>
+          <button type="submit" class="btn" style="align-self:stretch;padding:0 14px;display:flex;align-items:center;justify-content:center;">Send</button>
+        </form>
+      </section>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    // Hamburger menu for students
+    (function(){
+      var btn = document.getElementById('student-hamburger');
+      var menu = document.getElementById('student-menu');
+      if(btn && menu){
+        btn.onclick = function(e){
+          e.stopPropagation();
+          menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+        };
+        document.addEventListener('click', function(){ menu.style.display = 'none'; });
+      }
+      var viewBtn = document.getElementById('view-members');
+      var modal = document.getElementById('members-modal');
+      var closeModal = document.getElementById('close-members-modal');
+      var membersList = document.getElementById('members-list');
+      if(viewBtn && modal && membersList){
+        viewBtn.onclick = function(e){
+          e.preventDefault();
+          modal.style.display = 'flex';
+          membersList.innerHTML = 'Loading...';
+          fetch(window.location.pathname + '/members')
+            .then(r=>r.text())
+            .then(html=>{
+              // Parse out the members list from the returned HTML
+              var temp = document.createElement('div');
+              temp.innerHTML = html;
+              var ul = temp.querySelector('ul');
+              if(ul) membersList.innerHTML = ul.outerHTML;
+              else membersList.innerHTML = 'Unable to load members.';
+            });
+        };
+        closeModal.onclick = function(){ modal.style.display = 'none'; };
+        modal.onclick = function(e){ if(e.target === modal) modal.style.display = 'none'; };
+      }
+      var leaveBtn = document.getElementById('leave-group');
+      if(leaveBtn){
+        leaveBtn.onclick = function(e){
+          e.preventDefault();
+          if(confirm('Are you sure you want to leave this group? You will lose access to its chat and materials.')){
+            fetch(window.location.pathname + '/leave', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}})
+              .then(r=>r.json())
+              .then(data=>{ if(data.ok) window.location.href = '/my/classrooms'; });
+          }
+        };
+      }
+    })();
+    (function(){
+      function getCookie(name){
+        const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+        return v ? v.pop() : '';
+      }
+      const token = getCookie('csrf_token');
+      if(token){
+        for(const f of document.querySelectorAll('form')){
+          const inp = f.querySelector('input[name="csrf_token"]');
+          if(inp) inp.value = token;
+        }
+      }
+
+      // Teacher tools hamburger toggle
+      // (inline onclick on #teacher-menu-toggle handles panel toggle)
+
+      // Classroom WebSocket chat
+      const msgsEl = document.getElementById('classroom-chat-messages');
+      const form = document.getElementById('classroom-chat-form');
+      const input = document.getElementById('classroom-chat-input');
+      const metaEl = document.getElementById('classroom-meta');
+      if(msgsEl && form && input && metaEl){
+        const roomId = metaEl.getAttribute('data-room-id');
+        let ws;
+        function connect(){
+          const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+          const url = proto + '://' + window.location.host + '/ws/classrooms/' + roomId;
+          ws = new WebSocket(url);
+          ws.onmessage = function(ev){
+            try{
+              const data = JSON.parse(ev.data);
+              if(data.type === 'message' && data.message){
+                const m = data.message;
+                const meEl = document.getElementById('current-user');
+                let myId = null;
+                if (meEl) {
+                  const raw = meEl.getAttribute('data-my-id') || '';
+                  const parsed = parseInt(raw, 10);
+                  if (!isNaN(parsed)) myId = parsed;
+                }
+                const isMine = !!myId && m.sender_id === myId;
+
+                const row = document.createElement('div');
+                row.className = 'chat-row ' + (isMine ? 'chat-row--mine' : 'chat-row--other');
+
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble ' + (isMine ? 'chat-bubble--mine' : 'chat-bubble--other');
+
+                const nameSpan = document.createElement('span');
+                nameSpan.style.fontWeight = '600';
+                nameSpan.textContent = (isMine ? 'You' : (m.sender_name || 'Student')) + ': ';
+
+                const bodySpan = document.createElement('span');
+                bodySpan.textContent = m.content;
+
+                bubble.appendChild(nameSpan);
+                bubble.appendChild(bodySpan);
+                row.appendChild(bubble);
+                msgsEl.appendChild(row);
+                msgsEl.scrollTop = msgsEl.scrollHeight;
+              }
+            }catch(e){
+              console.error(e);
+            }
+          };
+          ws.onclose = function(){
+            // best-effort reconnect
+            setTimeout(function(){ connect(); }, 3000);
+          };
+        }
+        connect();
+
+        form.addEventListener('submit', function(ev){
+          ev.preventDefault();
+          const text = (input.value || '').trim();
+          if(!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+          ws.send(JSON.stringify({type:'message', content:text}));
+          input.value = '';
+        });
+      }
+    })();
+  </script>
+  <style>
+    .chat-row {
+      display: flex;
+      margin-bottom: 4px;
+    }
+    .chat-row--mine {
+      justify-content: flex-end;
+    }
+    .chat-row--other {
+      justify-content: flex-start;
+    }
+    .chat-bubble {
+      max-width: 80%;
+      padding: 6px 10px;
+      border-radius: 12px;
+      font-size: 14px;
+    }
+    .chat-bubble--mine {
+      background: #dcfce7;
+    }
+    .chat-bubble--other {
+      background: var(--surface);
+    }
+  </style>
+{% endblock %}

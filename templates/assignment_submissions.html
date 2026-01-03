@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}Submissions — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+  <section class="container" style="max-width:980px;margin-top:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div>
+        <h1 style="margin:0;font-size:20px;">Submissions for: {{ assignment.title }}</h1>
+        <a href="/classrooms/{{ classroom_id }}/library" class="muted" style="font-size:13px;">← Back to classroom</a>
+      </div>
+      <div style="text-align:right;color:var(--muted);font-size:13px;">Assignment ID: {{ assignment.id }}</div>
+    </div>
+
+    <div class="content-card" style="padding:12px 14px;margin-bottom:14px;">
+      <h2 style="margin:0 0 10px 0;font-size:16px;">Status overview</h2>
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong>Turned in</strong>
+            <span class="muted">{{ done_statuses|length }}</span>
+          </div>
+          <div style="min-height:40px;">
+            {% if done_statuses %}
+              <ul style="margin:0;padding-left:18px;">
+                {% for s in done_statuses %}
+                  {% set u = users_by_id.get(s.student_id) %}
+                  <li>{{ u.username if u else s.student_id }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="muted">No one has marked this as done yet.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:200px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong>Pending (almost done)</strong>
+            <span class="muted">{{ almost_statuses|length }}</span>
+          </div>
+          <div style="min-height:40px;">
+            {% if almost_statuses %}
+              <ul style="margin:0;padding-left:18px;">
+                {% for s in almost_statuses %}
+                  {% set u = users_by_id.get(s.student_id) %}
+                  <li>{{ u.username if u else s.student_id }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="muted">No one is in almost-done yet.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:200px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong>Rebellious</strong>
+            <span class="muted">{{ rebel_statuses|length }}</span>
+          </div>
+          <div style="min-height:40px;">
+            {% if rebel_statuses %}
+              <ul style="margin:0;padding-left:18px;">
+                {% for s in rebel_statuses %}
+                  {% set u = users_by_id.get(s.student_id) %}
+                  <li>{{ u.username if u else s.student_id }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="muted">No one has said "not gonna do it" yet.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-card" style="padding:12px 14px;">
+      <h2 style="margin:0 0 10px 0;font-size:16px;">File submissions</h2>
+      {% if submissions %}
+        <div style="overflow:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="text-align:left;border-bottom:1px solid var(--border);">
+                <th style="padding:8px;">Student</th>
+                <th style="padding:8px;">File</th>
+                <th style="padding:8px;">Submitted</th>
+                <th style="padding:8px;">Grade</th>
+                <th style="padding:8px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for s in submissions %}
+              {% set u = users_by_id.get(s.student_id) %}
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:10px;">{{ u.username if u else s.student_id }}</td>
+                <td style="padding:10px;"><a href="/submissions/{{ s.id }}/download">Download</a></td>
+                <td style="padding:10px;">{{ s.created_at }}</td>
+                <td style="padding:10px;">{{ s.grade or '—' }}</td>
+                <td style="padding:10px;">
+                  <form action="/submissions/{{ s.id }}/grade" method="post" class="grade-form" style="display:flex;gap:6px;align-items:center;">
+                    <input type="hidden" name="csrf_token" value="">
+                    <input name="grade" step="0.01" required placeholder="e.g. 85" style="width:80px;padding:6px;border:1px solid var(--border);border-radius:6px;" />
+                    <input name="feedback" placeholder="feedback" style="padding:6px;border:1px solid var(--border);border-radius:6px;" />
+                    <button type="submit" class="btn" style="padding:6px 10px;">Save</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="muted">No file submissions yet.</div>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function(){
+      function getCookie(name){const v=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');return v? v.pop(): ''}
+      const token = getCookie('csrf_token');
+      if(token){
+        for(const f of document.querySelectorAll('form.grade-form')){
+          const inp = f.querySelector('input[name="csrf_token"]');
+          if(inp) inp.value = token;
+        }
+      }
+    })();
+  </script>
+{% endblock %}

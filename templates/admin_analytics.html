@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Analytics</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:20px} .card{display:inline-block;padding:12px;margin:8px;border:1px solid #ddd;border-radius:6px}</style>
+</head>
+<body>
+  <h1>Admin Analytics</h1>
+  <section>
+    <h2>Summary</h2>
+    <div>
+      {% for k,v in events_by_type.items() %}
+        <div class="card"><strong>{{ k }}</strong><div>{{ v }}</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Top Classrooms by Events</h2>
+    <table>
+      <thead><tr><th>Classroom ID</th><th>Event Count</th></tr></thead>
+      <tbody>
+        {% for c in per_class %}
+          <tr><td>{{ c.classroom_id }}</td><td>{{ c.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Top Students by Activity</h2>
+    <table>
+      <thead><tr><th>User ID</th><th>Event Count</th></tr></thead>
+      <tbody>
+        {% for s in top_students %}
+          <tr><td>{{ s.user_id }}</td><td>{{ s.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent Events</h2>
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Classroom</th><th>Event</th><th>Details</th></tr></thead>
+      <tbody>
+        {% for e in recent %}
+          <tr>
+            <td>{{ e.created_at }}</td>
+            <td>{{ e.user_id }}</td>
+            <td>{{ e.classroom_id }}</td>
+            <td>{{ e.event_type }}</td>
+            <td>{{ e.details }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>

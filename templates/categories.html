@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container content-card">
+  <h2>All categories</h2>
+  <p class="muted">Explore presentations by topic. Click a category to filter results.</p>
+
+  <div style="margin-top:14px;">
+    <input id="category-search" placeholder="Search categories" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:10px;" />
+  </div>
+
+  <ul class="categories-list" id="categories-grid" style="margin-top:14px; padding:0; list-style:none;">
+    {% for c in categories %}
+    <li>
+      <a class="category-card" href="/search?category={{ c.name|url_encode }}" title="Browse {{ c.name }}">
+        <div class="category-card__title">{{ c.name }}</div>
+        <div class="category-card__meta">{{ c.count }} presentations</div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if total_pages and total_pages > 1 %}
+  <div style="margin-top:14px; display:flex; gap:8px; align-items:center; justify-content:center;">
+    {% if page > 1 %}
+      <a class="btn btn--ghost" href="/categories?page={{ page-1 }}&per_page={{ per_page }}">Previous</a>
+    {% endif %}
+    <div class="muted">Page {{ page }} of {{ total_pages }}</div>
+    {% if page < total_pages %}
+      <a class="btn" href="/categories?page={{ page+1 }}&per_page={{ per_page }}">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function(){
+  const input = document.getElementById('category-search');
+  const grid = document.getElementById('categories-grid');
+  if (!input || !grid) return;
+  input.addEventListener('input', function(){
+    const q = this.value.toLowerCase().trim();
+    Array.from(grid.querySelectorAll('li')).forEach(li=>{
+      const t = li.textContent.toLowerCase();
+      li.style.display = (!q || t.indexOf(q) !== -1) ? '' : 'none';
+    });
+  });
+})();
+</script>
+
+{% endblock %}

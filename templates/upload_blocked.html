@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block title %}Uploading disabled for passersby{% endblock %}
+
+{% block content %}
+  <section class="content-card" style="margin-top:18px;max-width:720px;">
+    <h1 style="margin-bottom:8px;">Uploading is turned off for passersby</h1>
+    <p class="muted" style="margin-bottom:14px;">
+      You chose <strong>Passerby — just browsing</strong> when you first arrived, so uploads are disabled on this device.
+    </p>
+    <p class="muted" style="margin-bottom:16px;">
+      If you want to share files, you can switch to a different role.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <a class="btn" href="/choose-role">Change your role</a>
+      <a class="btn btn--ghost" href="/featured">Keep browsing presentations</a>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>School Admin</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>School Admin — {{ school.name }}</h1>
+    <p><a href="/">Home</a></p>
+    {% if classrooms %}
+      {% for c in classrooms %}
+        <section>
+          <h2>{{ c.name }}</h2>
+          {% if c.members %}
+            <table>
+              <thead><tr><th>User</th><th>Role</th><th>Change Role</th></tr></thead>
+              <tbody>
+                {% for m in c.members %}
+                  <tr>
+                    <td>{{ m.username or m.user_id }}</td>
+                    <td>{{ m.role }}</td>
+                    <td>
+                      <form method="post" action="/schools/{{ school.id }}/admin/role" class="role-form">
+                        <input type="hidden" name="classroom_id" value="{{ c.id }}">
+                        <input type="hidden" name="user_id" value="{{ m.user_id }}">
+                        <input type="hidden" name="csrf_token" value="">
+                        <select name="role">
+                          <option value="student" {% if m.role=='student' %}selected{% endif %}>student</option>
+                          <option value="teacher" {% if m.role=='teacher' %}selected{% endif %}>teacher</option>
+                          <option value="admin" {% if m.role=='admin' %}selected{% endif %}>admin</option>
+                        </select>
+                        <button type="submit">Update</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p>No members</p>
+          {% endif %}
+        </section>
+      {% endfor %}
+    {% else %}
+      <p>No classrooms for this school.</p>
+    {% endif %}
+  </div>
+  <script>
+    // populate csrf_token hidden inputs from cookie
+    (function(){
+      function getCookie(name){
+        const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+        return v ? v.pop() : '';
+      }
+      const token = getCookie('csrf_token');
+       (token){
+        for(const f of document.querySelectorAll('form.role-form')){
+          const inp = f.querySelector('input[name="csrf_token"]');
+          if(inp) inp.value = token;
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

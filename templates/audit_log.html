@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Audit Log — {{ school.name }}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Audit Log — {{ school.name }}</h1>
+    <p><a href="/schools/{{ school.id }}/admin">Back to School Admin</a></p>
+    <form method="get" action="/schools/{{ school.id }}/audit">
+      <label>Event type:
+        <select name="event_type">
+          <option value="">(all)</option>
+          <option value="submission_download">submission_download</option>
+          <option value="autograde_requested">autograde_requested</option>
+          <option value="grade">grade</option>
+          <option value="upload">upload</option>
+        </select>
+      </label>
+      <label>From <input type="date" name="from_date"></label>
+      <label>To <input type="date" name="to_date"></label>
+      <button type="submit">Filter</button>
+    </form>
+    <form method="get" action="/schools/{{ school.id }}/audit" style="margin-top:8px;">
+      <label>Per page:
+        <input type="number" name="per_page" value="{{ per_page or 50 }}" min="1" max="100" />
+      </label>
+      <label>Page:
+        <input type="number" name="page" value="{{ page or 1 }}" min="1" />
+      </label>
+      <button type="submit">Go</button>
+    </form>
+    <p><a href="/schools/{{ school.id }}/audit.csv">Download CSV</a></p>
+    {% if events %}
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Classroom</th><th>Event</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for e in events %}
+            <tr>
+              <td>{{ e.created_at }}</td>
+              <td>{{ e.user_id }}</td>
+              <td>{{ e.classroom_id }}</td>
+              <td>{{ e.event_type }}</td>
+              <td>{{ e.details }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No audit events found.</p>
+    {% endif %}
+      {% if total and total > per_page %}
+        <div style="margin-top:12px;">
+          <p>Showing page {{ page }} ({{ per_page }} per page) — total ~{{ total }} events</p>
+          {% if page > 1 %}
+            <a href="?page={{ page-1 }}&per_page={{ per_page }}">Previous</a>
+          {% endif %}
+          <a href="?page={{ page+1 }}&per_page={{ per_page }}" style="margin-left:8px;">Next</a>
+        </div>
+      {% endif %}
+  </div>
+</body>
+</html>

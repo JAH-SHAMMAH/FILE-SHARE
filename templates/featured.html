@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{# categories are rendered globally in base.html; no duplicate here #}
+<section class="container" style="margin-top:0px; padding-top:0px;">
+  <div class="panel-head">
+    <h1 class="section-title">Featured presentations</h1>
+    <p class="muted">Curated and spotlighted decks — slide through the selection.</p>
+  </div>
+
+  <div class="featured-carousel">
+    <div class="featured-nav" style="left:-48px;">
+      <button id="featured-prev" class="prev" aria-label="Scroll left">◀</button>
+    </div>
+
+    <div class="featured-track" id="featured-track" data-carousel>
+      {% for p in featured %}
+      <article class="featured-card card" data-pid="{{ p.id }}">
+        <a class="card__link" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
+          <div class="card__thumb" style="position:relative;">
+            {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+            {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+            {% if is_pdf %}
+              <iframe class="thumb-frame" src="/download/{{ p.filename }}?inline=1#page=1&view=FitH&toolbar=0&navpanes=0" loading="lazy"></iframe>
+            {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src=this.dataset.placeholder" />
+            {% endif %}
+            <button class="preview-trigger" aria-label="Open preview" title="Preview" style="position:absolute;right:12px;bottom:12px;width:44px;height:44px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--brand-1));color:#fff;box-shadow:0 8px 20px rgba(16,24,40,0.3);cursor:pointer;">
+              ▶
+            </button>
+          </div>
+          <div class="card__body">
+            <h4>{{ p.title }}</h4>
+            <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %}</p>
+            <p class="muted" style="margin-top:6px;"> <strong>{{ p.owner_presentation_count or 0 }}</strong> presentations · <strong>{{ p.views or 0 }}</strong> views <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></p>
+          </div>
+        </a>
+        <button class="card__bookmark" type="button" data-id="{{ p.id }}" aria-label="Save presentation" title="Save for later">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
+        </button>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="featured-nav" style="right:-48px;">
+      <button id="featured-next" class="next" aria-label="Scroll right">▶</button>
+    </div>
+  </div>
+</section>
+
+<!-- Featured preview modal (reused by listing cards) -->
+<div class="preview-modal hidden" id="featured-preview-modal">
+  <div class="preview-backdrop" id="featured-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.56);z-index:998;display:none"></div>
+  <div class="preview-dialog" role="dialog" aria-modal="true" aria-label="Featured preview dialog" style="position:fixed;left:50%;top:8%;transform:translateX(-50%);width:92%;max-width:1180px;z-index:1000;background:var(--surface);border-radius:12px;box-shadow:var(--shadow);display:none;overflow:hidden">
+    <div class="preview-head" style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:var(--nav);color:#fff;">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div class="preview-title" id="featured-modal-title" style="font-weight:800;color:#fff;">Preview</div>
+          <div class="preview-meta muted" id="featured-modal-meta" style="font-size:13px;color:rgba(255,255,255,0.85);"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <a id="featured-modal-openpage" class="btn btn--ghost" href="#" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.06);">Open page</a>
+          <button class="preview-close" id="featured-modal-close" aria-label="Close preview" style="background:transparent;color:#fff;border:none;font-size:22px;">×</button>
+        </div>
+    </div>
+    <div class="preview-body" style="display:flex;gap:12px;">
+      <div class="presentation-thumbs" id="featured-modal-thumbs" style="width:220px;max-height:70vh;overflow:auto;padding:8px;"></div>
+      <div class="presentation-main-viewer" id="featured-modal-main" style="flex:1;min-height:360px;display:flex;align-items:center;justify-content:center;padding:10px;background:var(--bg);border-radius:8px;">
+        <div class="preview-message muted" id="featured-modal-placeholder">Click a thumbnail to view page.</div>
+      </div>
+    </div>
+      <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--surface);">
+        <div id="featured-modal-desc" class="muted" style="max-height:140px;overflow:auto;color:var(--muted);font-size:14px;padding-top:6px"></div>
+      </div>
+    <div class="preview-actions">
+      <div class="muted" id="featured-modal-status"></div>
+      <div>
+        <a class="btn" id="featured-modal-download" href="#" download>Download</a>
+        <a class="btn btn--ghost" id="featured-modal-open-original" href="#" target="_blank">Open original</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function(){
+    const track = document.getElementById('featured-track');
+    const modal = document.getElementById('featured-preview-modal');
+    const backdrop = document.getElementById('featured-modal-backdrop');
+    const closeBtn = document.getElementById('featured-modal-close');
+    const thumbsEl = document.getElementById('featured-modal-thumbs');
+    const mainEl = document.getElementById('featured-modal-main');
+    const titleEl = document.getElementById('featured-modal-title');
+    const downloadBtn = document.getElementById('featured-modal-download');
+    const openOriginalBtn = document.getElementById('featured-modal-open-original');
+    const statusEl = document.getElementById('featured-modal-status');
+
+    async function fetchThumbnails(id){
+      try{
+        const res = await fetch(`/presentations/${id}/thumbnails`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.thumbnails || [];
+      }catch(e){ return []; }
+    }
+
+    function showModal(){ modal.classList.remove('hidden'); }
+    function hideModal(){ modal.classList.add('hidden'); thumbsEl.innerHTML=''; mainEl.innerHTML=''; statusEl.textContent=''; }
+
+    async function openPreview(id, title, originalUrl){
+      titleEl.textContent = title || 'Preview';
+      downloadBtn.href = originalUrl || '#';
+      openOriginalBtn.href = originalUrl || '#';
+      showModalUI();
+      statusEl.textContent = 'Loading thumbnails...';
+      const thumbs = await fetchThumbnails(id);
+      thumbsEl.innerHTML = '';
+      mainEl.innerHTML = '';
+      if (!thumbs.length){
+        statusEl.textContent = 'No thumbnails available';
+        const link = document.createElement('a');
+        link.className='btn';
+        link.href = originalUrl || '#';
+        link.textContent = 'Download / Open original';
+        link.target = '_blank';
+        mainEl.appendChild(link);
+        return;
+      }
+      statusEl.textContent = '';
+      thumbs.forEach((u,i)=>{
+        const img = document.createElement('img');
+        img.src = u; img.className='presentation-thumb'; img.dataset.index=i; img.loading='lazy'; img.alt='Page '+(i+1);
+        img.addEventListener('click', ()=>{
+          // mark active
+          thumbsEl.querySelectorAll('.presentation-thumb').forEach(el=>el.classList.remove('active'));
+          img.classList.add('active');
+          mainEl.innerHTML='';
+          const imgBig = document.createElement('img'); imgBig.src = u; imgBig.alt = 'Page '+(i+1); imgBig.style.maxHeight='78vh'; imgBig.style.width='100%';
+          mainEl.appendChild(imgBig);
+        });
+        thumbsEl.appendChild(img);
+      });
+      // auto click first
+      const first = thumbsEl.querySelector('.presentation-thumb');
+      if (first) first.click();
+    }
+
+    if (track){
+      track.addEventListener('click', function(ev){
+        const previewBtn = ev.target.closest('.preview-trigger');
+        const card = ev.target.closest('.featured-card');
+        if (!card) return;
+        const pid = card.getAttribute('data-pid');
+        const title = card.querySelector('.card__body h4') ? card.querySelector('.card__body h4').textContent.trim() : '';
+        if (!previewBtn) {
+          // no preview button — allow default navigation to presentation page
+          return; 
+        }
+        // if preview button clicked, open modal preview
+        ev.preventDefault();
+        ev.stopPropagation();
+        // try to get metadata from server for title + description
+        fetch(`/api/presentations/${pid}`).then(r=>r.json()).then(meta=>{
+          document.getElementById('featured-modal-desc').textContent = meta.description || '';
+          const owner = meta.owner_username ? (meta.owner_username + (meta.owner_id ? (' • ' + meta.owner_id) : '')) : '';
+          document.getElementById('featured-modal-meta').textContent = owner;
+          document.getElementById('featured-modal-openpage').href = `/presentations/${pid}`;
+          openPreview(pid, meta.title || title, meta.original_url || '');
+        }).catch(()=>{
+          document.getElementById('featured-modal-desc').textContent = '';
+          document.getElementById('featured-modal-meta').textContent = '';
+          document.getElementById('featured-modal-openpage').href = `/presentations/${pid}`;
+          openPreview(pid, title, '#');
+        });
+      }, true);
+    }
+
+    // show/hide with proper layering
+    function showModalUI(){
+      document.getElementById('featured-modal-backdrop').style.display = 'block';
+      document.querySelector('.preview-dialog').style.display = 'block';
+      modal.classList.remove('hidden');
+    }
+    function hideModalUI(){
+      document.getElementById('featured-modal-backdrop').style.display = 'none';
+      document.querySelector('.preview-dialog').style.display = 'none';
+      modal.classList.add('hidden');
+    }
+    if (backdrop) backdrop.addEventListener('click', hideModalUI);
+    if (closeBtn) closeBtn.addEventListener('click', hideModalUI);
+    window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') hideModalUI(); });
+  })();
+</script>
+{% endblock %}

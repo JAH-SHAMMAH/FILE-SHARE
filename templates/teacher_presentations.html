@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Presentations by {{ teacher.username }}{% endblock %}
+
+{% block content %}
+  <section class="container" style="margin-top:18px;">
+    {% set cu = request.state.current_user if request and request.state else None %}
+    <div class="panel-head" style="margin-bottom:12px;">
+      <h1 class="section-title">
+        {% if cu and cu.site_role == 'student' %}
+          Your teacher&apos;s presentations
+        {% else %}
+          Presentations by {{ teacher.username }}
+        {% endif %}
+      </h1>
+      <p class="muted">
+        {% if cu and cu.site_role == 'student' %}
+          Switch between all community content and your teacher&apos;s uploads.
+        {% else %}
+          Browse this teacher&apos;s public uploads.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="view-toggle" aria-label="Presentation view toggle">
+      <a class="view-toggle__btn" href="{{ url_for('featured') }}">All presentations</a>
+      <button class="view-toggle__btn is-active" type="button">
+        {% if cu and cu.site_role == 'student' %}
+          Your teacher&apos;s presentations
+        {% else %}
+          {{ teacher.username }}&apos;s presentations
+        {% endif %}
+      </button>
+    </div>
+
+    <div style="margin-top:18px;">
+      {% if presentations and presentations|length %}
+        <ul class="presentations-list">
+          {% for p in presentations %}
+            <li>
+              <a href="/presentations/{{ p.id }}">{{ p.title }}</a>
+              <div class="muted">{{ p.created_at }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No presentations found for this teacher.</p>
+      {% endif %}
+      <p style="margin-top:10px;"><a href="/my/teachers" class="muted">Back to your teachers</a></p>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+{% set ui_lang = request.cookies.get('ui_lang', 'en') if request and request.cookies else 'en' %}
+<html lang="{{ ui_lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}247FileShare{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if request.state.current_user and request.state.current_user.site_role == 'teacher' %}role-teacher{% endif %}">
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="header-left" style="display:flex;align-items:center;gap:12px;">
+        <a href="{{ url_for('index') }}" class="brand">
+          <span class="brand-text">247FileShare</span>
+        </a>
+      </div>
+
+      <nav class="header-nav">
+        <div class="nav-cta" style="display:flex;align-items:center;gap:10px;">
+          <div class="nav-link small" title="Language" style="position:relative;">
+            <span>🌐 {{ ui_lang|upper }}</span>
+            <div class="lang-dropdown">
+              <a href="/set-language?lang=en">English</a>
+              <a href="/set-language?lang=fr">Français</a>
+              <a href="/set-language?lang=es">Español</a>
+            </div>
+          </div>
+          {% if ui_lang == 'fr' %}
+            {% set t_featured = 'À la une' %}
+            {% set t_teaching = 'Enseignement' %}
+            {% set t_messages = 'Messages' %}
+            {% set t_upload = 'Téléverser' %}
+            {% set t_login = 'Connexion' %}
+            {% set t_signup = "Start" %}
+            {% set t_help = 'Aide' %}
+            {% set t_contact = 'Contact' %}
+            {% set t_terms = 'Conditions' %}
+            {% set t_privacy = 'Confidentialité' %}
+          {% elif ui_lang == 'es' %}
+            {% set t_featured = 'Destacados' %}
+            {% set t_teaching = 'Enseñar' %}
+            {% set t_classrooms = 'Aulas' %}
+            {% set t_materials = 'Materiales' %}
+            {% set t_messages = 'Mensajes' %}
+            {% set t_upload = 'Subir' %}
+            {% set t_login = 'Iniciar sesión' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'Ayuda' %}
+            {% set t_contact = 'Contacto' %}
+            {% set t_terms = 'Términos' %}
+            {% set t_privacy = 'Privacidad' %}
+          {% else %}
+            {% set t_featured = 'Featured' %}
+            {% set t_teaching = 'Teaching' %}
+            {% set t_classrooms = 'Classrooms' %}
+            {% set t_materials = 'Materials' %}
+            {% set t_messages = 'Messages' %}
+            {% set t_upload = 'Upload' %}
+            {% set t_login = 'Login' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'Help' %}
+            {% set t_contact = 'Contact' %}
+            {% set t_terms = 'Terms' %}
+            {% set t_privacy = 'Privacy' %}
+          {% endif %}
+
+          <a class="nav-link" href="{{ url_for('featured') }}">{{ t_featured }}</a>
+          {% set cu = request.state.current_user if request and request.state else None %}
+          {% if cu %}
+            {% if cu.site_role == 'student' %}
+              <a class="nav-link" href="{{ url_for('student_classrooms') }}">{{ t_classrooms }}</a>
+              <a class="nav-link" href="{{ url_for('student_materials') }}">{{ t_materials }}</a>
+            {% endif %}
+            {% if cu.site_role in ['teacher', 'individual'] %}
+              <a class="nav-link" href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a>
+            {% endif %}
+            <a class="nav-link" href="{{ url_for('messages_page') }}">
+              {{ t_messages }}
+              <span id="messages-badge" style="display:none;margin-left:4px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;">0</span>
+            </a>
+            <a class="nav-link" href="{{ url_for('upload') }}">{{ t_upload }}</a>
+          {% else %}
+            <a class="nav-link" href="{{ url_for('login') }}">{{ t_login }}</a>
+            <a class="nav-link" href="{{ url_for('register') }}">{{ t_signup }}</a>
+          {% endif %}
+        </div>
+
+        <button id="hamburger" class="hamburger" aria-label="Open categories" aria-expanded="false">☰</button>
+
+        {% if request.state.current_user %}
+          <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+            <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
+          </button>
+          <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
+            <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button id="notif-launcher" class="icon-btn" title="Notifications" style="position:relative;margin-left:6px">🔔<span id="notif-badge" style="position:absolute;right:-6px;top:-6px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;display:none">0</span></button>
+          <div class="profile-menu">
+            <div class="profile-menu__head">
+              <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+                <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
+              </button>
+              <div>
+                <div class="profile-menu__name">
+                  {{ request.state.current_user.username }}
+                  {% if request.state.current_user.site_role == 'teacher' %}
+                    <span title="Teacher" style="color:#2563eb;">★</span>
+                  {% elif request.state.current_user.site_role == 'student' %}
+                    <span title="Student" style="color:#f59e0b;">★</span>
+                  {% elif request.state.current_user.site_role == 'individual' %}
+                    <span title="Individual" style="color:#dc2626;">★</span>
+                  {% elif request.state.current_user.site_role == 'passerby' %}
+                    <span title="Passerby" style="color:#111827;">★</span>
+                  {% endif %}
+                </div>
+                <div class="profile-menu__email">{{ request.state.current_user.email or '' }}</div>
+              </div>
+            </div>
+            <a class="profile-menu__item" href="{{ url_for('profile_view', username=request.state.current_user.username) }}">View Profile</a>
+            <a class="profile-menu__item" href="{{ url_for('bookmarks_view') }}">Saved</a>
+            <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
+            {% if ADMIN_USERNAME and request.state.current_user.username == ADMIN_USERNAME %}
+            <a class="profile-menu__item" href="{{ url_for('admin_import_page') }}">Admin: Import</a>
+            {% endif %}
+            {% if request.state.current_user.is_premium %}
+            <a class="profile-menu__item" href="{{ url_for('premium_dashboard') }}">Premium Dashboard</a>
+            {% else %}
+            <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
+            {% endif %}
+            {% if request.state.current_user.spotify_refresh_token %}
+            <div class="profile-menu__item" style="cursor:default">Spotify connected</div>
+            {% else %}
+            <a class="profile-menu__item" href="{{ url_for('spotify_login') }}">Connect Spotify</a>
+            {% endif %}
+            <a class="profile-menu__item" href="#settings">Account Settings</a>
+            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
+            <div class="profile-menu__divider"></div>
+            <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
+          </div>
+        {% endif %}
+
+        <div id="hamburger-menu" class="hamburger-menu" aria-hidden="true">
+          <div class="hamburger-menu__inner">
+            {% if request.state.current_user %}
+            <div class="hamburger-menu__section">
+              <h4>Your account</h4>
+              <ul>
+                <li><a href="{{ url_for('profile_view', username=request.state.current_user.username) }}">View profile</a></li>
+                <li><a href="{{ url_for('account_settings_get') }}#role-settings">Change role / view</a></li>
+              </ul>
+            </div>
+            <div class="hamburger-menu__divider"></div>
+            {% endif %}
+
+            <div class="hamburger-menu__section">
+              <h4>Browse by category</h4>
+              <ul>
+                <li><a href="/search">All categories</a></li>
+                {% for c in request.state.categories or [] %}
+                  <li><a href="/search?category={{ c|url_encode }}">{{ c }}</a></li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  {# Global category chips under the header, only on Featured page #}
+  {% set current_path = request.url.path if request and request.url else '' %}
+  {% if request.state.categories and current_path == '/featured' %}
+  <section class="container category-bar" style="margin-top:8px;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="suggested-chips">
+        {% set suggested = ['For You','Business','Mobile','Marketing','Technology'] %}
+        {% set suggested_lower = suggested | map('lower') | list %}
+        {% for s in suggested %}
+          {% set is_for_you = (s == 'For You') %}
+          {% if is_for_you %}
+            {% set active_for_you = (current_path == '/featured') or ((request.query_params.get('category') or 'For You') == 'For You') %}
+            <a class="suggested-chip{% if active_for_you %} active{% endif %}" href="{{ url_for('featured') }}">{{ s }}</a>
+          {% else %}
+            {% set active_cat = (s == request.query_params.get('category')) %}
+            <a class="suggested-chip{% if active_cat %} active{% endif %}" href="/search?category={{ s|url_encode }}">{{ s }}</a>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;">
+        <div id="category-scroll" class="category-scroll" role="list">
+          {% set ns = namespace(seen=[]) %}
+          {% for c in request.state.categories or [] %}
+            {% set c_lower = c|lower %}
+            {% if c_lower not in suggested_lower and c_lower not in ns.seen %}
+              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if c == request.query_params.get('category') %} active{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
+              {% set _ = ns.seen.append(c_lower) %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <main class="container" style="padding: var(--space-lg) 0;">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inline">
+      <div class="footer-inline__brand">© {{ current_year or 2025 }} FileShare</div>
+      <nav class="footer-inline__nav" aria-label="Footer">
+        <a href="{{ url_for('help') }}">{{ t_help }}</a>
+        <a href="{{ url_for('contact') }}">{{ t_contact }}</a>
+        <a href="/terms">{{ t_terms }}</a>
+        <a href="/privacy">{{ t_privacy }}</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="{{ request.url_for('static', path='js/main.js') }}"></script>
+  <script src="{{ request.url_for('static', path='js/chat.js') }}"></script>
+  <script src="{{ request.url_for('static', path='js/thumb-fallback.js') }}"></script>
+  <script src="{{ request.url_for('static', path='js/cookies.js') }}"></script>
+  {% set consent_parsed = request.state.cookie_consent_parsed if request and request.state else None %}
+  {# Server-side analytics injection only when user consented to analytics #}
+  {% if consent_parsed and consent_parsed.analytics and (env.GA_MEASUREMENT_ID or '') %}
+    <!-- Google Analytics (injected after consent) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ env.GA_MEASUREMENT_ID }}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);} gtag('js', new Date());
+      gtag('config', '{{ env.GA_MEASUREMENT_ID }}');
+    </script>
+  {% endif %}
+  {% if request.state.current_user %}
+  <!-- Floating chat launcher -->
+  <button id="chat-launcher" title="Open chat" class="chat-launcher">💬</button>
+  <!-- Notification panel -->
+  <div id="notif-panel" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel" style="width:360px;max-width:calc(100% - 24px);">
+      <header class="chat-header">
+        <div class="chat-header__title">Notifications</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <a href="{{ url_for('notifications_page') }}" class="btn btn--ghost" style="padding:4px 10px;font-size:13px;">Open page</a>
+          <button id="notif-close" class="icon-btn">✕</button>
+        </div>
+      </header>
+      <div id="notif-list" style="max-height:420px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;">
+        <!-- notifications loaded via JS -->
+      </div>
+      <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:space-between;align-items:center;">
+        <button id="notif-clear-all" class="btn btn--ghost" style="color:#b91c1c;border-color:#fecaca;">Clear feed</button>
+        <button id="notif-mark-all" class="btn btn--ghost">Mark all read</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Chat modal -->
+  <div id="chat-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel">
+      <header class="chat-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div id="chat-avatar" class="contact-avatar">??</div>
+          <div class="chat-header__title" id="chat-username">User</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="chat-theme-toggle" class="icon-btn" title="Coffee mode">☕ Coffee</button>
+          <button id="chat-close" class="icon-btn">✕</button>
+        </div>
+      </header>
+      <div id="chat-recipient-block" style="padding:10px;border-bottom:1px solid var(--border);">
+        <label for="chat-recipient" class="muted">Recipient user id (or select from people you follow):</label>
+        <input id="chat-recipient" type="text" placeholder="User id (e.g. 42)" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid var(--border);" />
+        <div style="margin-top:8px;">
+          <label style="font-size:0.9em;color:var(--muted);"><input id="chat-mutuals-only" type="checkbox" style="margin-right:6px;"/> Mutuals only</label>
+          <select id="chat-recipient-select" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid var(--border);display:none"></select>
+          <div id="chat-recipient-list" class="chat-recipient-list"></div>
+        </div>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <form id="chat-form" class="chat-form" enctype="multipart/form-data">
+        <input id="chat-input" type="text" placeholder="Write a message..." autocomplete="off" />
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  <!-- current user marker for client-side scripts -->
+  <div id="current-user" data-my-id="{{ request.state.current_user.id if request.state.current_user else '' }}" style="display:none"></div>
+
+  <!-- Sign-in prompt modal (shown to anonymous users when they click Contact Owner) -->
+  <div id="signin-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel">
+      <header class="chat-header">
+        <div class="chat-header__title">Sign in to message</div>
+        <button id="signin-close" class="icon-btn">✕</button>
+      </header>
+      <div style="padding:16px;">
+        <p class="muted">You need to sign in to use direct messaging. You can sign in or contact the owner by email.</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <a class="btn" id="signin-login" href="{{ url_for('login') }}">Sign in</a>
+          <a class="btn btn--ghost" id="signin-register" href="{{ url_for('register') }}">Register</a>
+          <a class="btn btn--ghost" id="signin-mailto" href="#">Contact by email</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Contact Owner modal for signed-in users (chat-style composer) -->
+  <div id="contact-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel contact-panel">
+      <header class="chat-header contact-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div id="contact-owner-avatar" class="contact-avatar">??</div>
+          <div>
+            <div id="contact-owner-title" class="contact-title">Contact owner</div>
+            <div id="contact-owner-subtitle" class="contact-subtitle muted"></div>
+          </div>
+        </div>
+        <button id="contact-close" class="icon-btn">✕</button>
+      </header>
+      <div class="contact-body">
+        <div id="contact-thread" class="chat-messages contact-messages">
+          <div class="chat-msg other">
+            <div class="chat-msg__text" id="contact-intro">You are contacting <span id="contact-owner-label">the owner</span>. Type your message below and we’ll send it to them.</div>
+          </div>
+        </div>
+        <form id="contact-form" class="chat-form contact-form">
+          <input type="hidden" id="contact-owner-id" name="owner_id" value="" />
+          <input type="hidden" id="contact-owner-username" name="owner_username" value="" />
+          <input type="hidden" id="contact-name" name="name" />
+          <input type="hidden" id="contact-email" name="email" />
+          <textarea id="contact-message" name="message" rows="2" placeholder="Write your message…" required></textarea>
+          <button type="submit" class="btn">Send</button>
+        </form>
+        <div id="contact-status" class="muted" style="margin:4px 16px 10px; display:none;"></div>
+        <button type="button" id="contact-cancel" class="btn btn--ghost" style="margin:0 16px 14px auto;">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <!-- Toast container for UI feedback -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true" style="position:fixed;right:16px;bottom:18px;z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

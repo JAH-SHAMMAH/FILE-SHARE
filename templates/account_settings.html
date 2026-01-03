@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}Account Settings{% endblock %}
+
+{% block content %}
+  <section class="container" style="margin-top:18px;max-width:780px;">
+    <h1 class="section-title" style="margin-bottom:6px;">Account settings</h1>
+    <p class="muted" style="margin-bottom:16px;">Change how you experience the site by switching roles.</p>
+
+    <div class="content-card" id="role-settings" style="margin-bottom:18px;">
+      <h2 style="margin:0 0 6px 0;font-size:18px;">Role &amp; view</h2>
+      <p class="muted" style="margin:0 0 12px 0;">Pick a role to see different layouts and tools. You can switch any time.</p>
+
+      <form method="post" action="/account/settings" class="role-chooser">
+        <label class="field" style="display:block;margin-bottom:10px;">
+          <span class="muted" style="display:block;margin-bottom:4px;">Current role</span>
+          <select name="role">
+            <option value="passerby" {% if current_user and current_user.site_role=='passerby' %}selected{% endif %}>Passerby — just browsing</option>
+            <option value="student" {% if current_user and current_user.site_role=='student' %}selected{% endif %}>Student / Learner</option>
+            <option value="teacher" {% if current_user and current_user.site_role=='teacher' %}selected{% endif %}>Educator / Teacher / Mentor</option>
+            <option value="individual" {% if current_user and current_user.site_role=='individual' %}selected{% endif %}>Individual creator</option>
+          </select>
+        </label>
+        <ul class="muted" style="font-size:13px;margin:0 0 10px 0;padding-left:18px;">
+          <li><strong>Passerby</strong>: browse only, no uploads.</li>
+          <li><strong>Student</strong>: see your teachers, assignments, and class views.</li>
+          <li><strong>Educator</strong>: manage classrooms, students, and a teaching dashboard.</li>
+          <li><strong>Individual</strong>: upload and share your own presentations.</li>
+        </ul>
+        <button class="btn" type="submit">Save role</button>
+      </form>
+    </div>
+
+    <p class="muted" style="font-size:13px;">Tip: you can also trigger the full role picker again from the homepage by visiting <a href="/choose-role">/choose-role</a>.</p>
+  </section>
+{% endblock %}
