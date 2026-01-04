@@ -19,7 +19,7 @@
         </a>
         <div class="card__body">
           <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
-          <div class="card__meta">Views: {{ p.views }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
+          <div class="card__meta">Views: {{ p.views }} • Likes: {{ p.likes_count or 0 }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
           <p class="card__desc">{{ p.description or '-' }}</p>
         </div>
       </article>

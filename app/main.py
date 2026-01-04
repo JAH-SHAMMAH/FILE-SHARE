@@ -3,27 +3,32 @@ import shutil
 import logging
 import traceback
 import mimetypes
+import asyncio
 from fastapi.exceptions import RequestValidationError
 from fastapi import (
     FastAPI,
     Request,
-    Form,
-    UploadFile,
-    File,
     Depends,
     HTTPException,
     status,
-    Response,
+    Form,
+    File,
+    UploadFile,
     Body,
     Query,
+    WebSocket,
+    WebSocketDisconnect,
+    Response,
 )
-from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
-from fastapi import WebSocket, WebSocketDisconnect
-import asyncio
-from typing import Dict, List, Set
-import json
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    FileResponse,
+    PlainTextResponse,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 from sqlalchemy import func, desc
@@ -50,6 +55,7 @@ from .models import (
     Transaction,
     WebhookEvent,
     Activity,
+    AIResult,
 )
 from .models import School, Classroom, Membership, LibraryItem, Assignment, Submission, Attendance, AssignmentStatus
 from .models import Notification
@@ -88,7 +94,7 @@ import base64
 import httpx
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Set
 import textwrap
 import json
 from datetime import datetime
@@ -307,6 +313,8 @@ try:
     templates.env.filters['humanize_comment_date'] = humanize_comment_date
 except Exception:
     pass
+"""Expose some helper views for classroom relationships (teachers, classrooms, materials)."""
+
 # expose ADMIN_USERNAME to templates for conditional UI
 @app.get('/my/teachers', response_class=HTMLResponse)
 def my_teachers(request: Request, current_user: User = Depends(get_current_user)):
@@ -317,29 +325,52 @@ def my_teachers(request: Request, current_user: User = Depends(get_current_user)
         if not cls_ids:
             teachers = []
         else:
-            teachers_mem = session.exec(select(Membership).where((Membership.classroom_id.in_(cls_ids)) & (Membership.role.in_(['teacher','admin'])))).all()
+            teachers_mem = session.exec(
+                select(Membership).where(
+                    (Membership.classroom_id.in_(cls_ids))
+                    & (Membership.role.in_(['teacher', 'admin']))
+                )
+            ).all()
             teacher_ids = sorted({m.user_id for m in teachers_mem})
             teachers = []
             for tid in teacher_ids:
                 u = session.get(User, tid)
                 if u:
+<<<<<<< HEAD
                     teachers.append({'id': u.id, 'username': getattr(u, 'username', None), 'email': getattr(u, 'email', None)})
 
         # also build a quick lookup of classroom memberships for use in other views
         memberships = session.exec(select(Membership).where(Membership.user_id == current_user.id)).all()
+=======
+                    teachers.append(
+                        {
+                            'id': u.id,
+                            'username': getattr(u, 'username', None),
+                            'email': getattr(u, 'email', None),
+                        }
+                    )
+>>>>>>> 0b92d6c (Commit local UI and model changes)
     return templates.TemplateResponse('my_teachers.html', {'request': request, 'teachers': teachers})
 
 
 @app.get('/my/classrooms', response_class=HTMLResponse)
+<<<<<<< HEAD
 def student_classrooms(request: Request, current_user: User = Depends(get_current_user)):
     """Show classrooms where the current user is a student."""
     with Session(engine) as session:
         mems = session.exec(
+=======
+def my_classrooms(request: Request, current_user: User = Depends(get_current_user)):
+    """List classrooms where the current user is a student."""
+    with Session(engine) as session:
+        memberships = session.exec(
+>>>>>>> 0b92d6c (Commit local UI and model changes)
             select(Membership).where(
                 (Membership.user_id == current_user.id)
                 & (Membership.role == 'student')
             )
         ).all()
+<<<<<<< HEAD
         if not mems:
             classrooms = []
         else:
@@ -369,19 +400,61 @@ def student_classrooms(request: Request, current_user: User = Depends(get_curren
                     }
                 )
     return templates.TemplateResponse('student_classrooms.html', {'request': request, 'current_user': current_user, 'classrooms': classrooms})
+=======
+        classroom_ids = sorted({m.classroom_id for m in memberships})
+        classrooms = []
+        for cid in classroom_ids:
+            c = session.get(Classroom, cid)
+            if not c:
+                continue
+            teacher_mems = session.exec(
+                select(Membership).where(
+                    (Membership.classroom_id == cid)
+                    & (Membership.role.in_(['teacher', 'admin']))
+                )
+            ).all()
+            teacher_names = []
+            for tm in teacher_mems:
+                u = session.get(User, tm.user_id)
+                if u and getattr(u, 'username', None):
+                    teacher_names.append(u.username)
+            classrooms.append(
+                {
+                    'id': cid,
+                    'name': getattr(c, 'name', ''),
+                    'teacher_names': teacher_names,
+                }
+            )
+    return templates.TemplateResponse(
+        'my_classrooms.html',
+        {
+            'request': request,
+            'classrooms': classrooms,
+        },
+    )
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 
 
 @app.get('/my/materials', response_class=HTMLResponse)
 def student_materials(request: Request, current_user: User = Depends(get_current_user)):
+<<<<<<< HEAD
     """Show materials (presentations) and assignments from the student's teachers."""
     with Session(engine) as session:
         # classrooms where user is a student
         mems = session.exec(
+=======
+    """Show presentations uploaded by the teachers of this student's classrooms."""
+    results: List[SimpleNamespace] = []
+    with Session(engine) as session:
+        # classrooms where current user is a student
+        memberships = session.exec(
+>>>>>>> 0b92d6c (Commit local UI and model changes)
             select(Membership).where(
                 (Membership.user_id == current_user.id)
                 & (Membership.role == 'student')
             )
         ).all()
+<<<<<<< HEAD
         if not mems:
             presentations = []
             teachers_by_id = {}
@@ -450,11 +523,107 @@ def student_materials(request: Request, current_user: User = Depends(get_current
         library_items
     except NameError:
         library_items = []
+=======
+        cls_ids = [m.classroom_id for m in memberships]
+        if cls_ids:
+            # teachers/admins for those classrooms
+            teachers_mem = session.exec(
+                select(Membership).where(
+                    (Membership.classroom_id.in_(cls_ids))
+                    & (Membership.role.in_(['teacher', 'admin']))
+                )
+            ).all()
+            teacher_ids = sorted({m.user_id for m in teachers_mem})
+            if teacher_ids:
+                stmt = (
+                    select(Presentation)
+                    .options(
+                        selectinload(Presentation.owner),
+                        selectinload(Presentation.category),
+                    )
+                    .where(Presentation.owner_id.in_(teacher_ids))
+                    .order_by(desc(Presentation.created_at))
+                )
+                pres_raw = session.exec(stmt).all()
+                for p in pres_raw:
+                    owner = getattr(p, 'owner', None)
+                    results.append(
+                        SimpleNamespace(
+                            id=p.id,
+                            title=p.title,
+                            description=getattr(p, 'description', None),
+                            filename=p.filename,
+                            mimetype=p.mimetype,
+                            owner_id=p.owner_id,
+                            owner_username=getattr(owner, 'username', None)
+                            if owner
+                            else None,
+                            owner_email=getattr(owner, 'email', None)
+                            if owner
+                            else None,
+                            views=getattr(p, 'views', None),
+                            cover_url=getattr(p, 'cover_url', None)
+                            if hasattr(p, 'cover_url')
+                            else None,
+                            created_at=getattr(p, 'created_at', None),
+                        )
+                    )
+
+                # attach bookmark counts
+                res_ids = [r.id for r in results if getattr(r, 'id', None)]
+                if res_ids:
+                    rows = session.exec(
+                        select(Bookmark.presentation_id, func.count(Bookmark.id))
+                        .where(Bookmark.presentation_id.in_(list(res_ids)))
+                        .group_by(Bookmark.presentation_id)
+                    ).all()
+                    bc = {int(r[0]): int(r[1]) for r in rows}
+                else:
+                    bc = {}
+                for r in results:
+                    setattr(r, 'bookmarks_count', bc.get(getattr(r, 'id', None), 0))
+
+                # attach like counts
+                if res_ids:
+                    rows_likes = session.exec(
+                        select(Like.presentation_id, func.count(Like.id))
+                        .where(Like.presentation_id.in_(list(res_ids)))
+                        .group_by(Like.presentation_id)
+                    ).all()
+                    lc = {int(r[0]): int(r[1]) for r in rows_likes}
+                else:
+                    lc = {}
+                for r in results:
+                    setattr(r, 'likes_count', lc.get(getattr(r, 'id', None), 0))
+
+                # attach owner presentation counts
+                res_owner_ids = {
+                    r.owner_id
+                    for r in results
+                    if getattr(r, 'owner_id', None) is not None
+                }
+                if res_owner_ids:
+                    rows_oc = session.exec(
+                        select(Presentation.owner_id, func.count(Presentation.id))
+                        .where(Presentation.owner_id.in_(list(res_owner_ids)))
+                        .group_by(Presentation.owner_id)
+                    ).all()
+                    owner_counts = {int(r[0]): int(r[1]) for r in rows_oc}
+                else:
+                    owner_counts = {}
+                for r in results:
+                    setattr(
+                        r,
+                        'owner_presentation_count',
+                        owner_counts.get(getattr(r, 'owner_id', None), 0),
+                    )
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 
     return templates.TemplateResponse(
         'student_materials.html',
         {
             'request': request,
+<<<<<<< HEAD
             'current_user': current_user,
             'presentations': presentations,
             'library_items': library_items,
@@ -462,6 +631,9 @@ def student_materials(request: Request, current_user: User = Depends(get_current
             'assignments': assignments,
             'assignment_status_by_id': assignment_status_by_id,
             'classrooms_by_id': classrooms_by_id,
+=======
+            'results': results,
+>>>>>>> 0b92d6c (Commit local UI and model changes)
         },
     )
 
@@ -525,6 +697,7 @@ def teacher_dashboard(request: Request, current_user: User = Depends(get_current
     )
 
 
+<<<<<<< HEAD
 @app.get('/teacher/classrooms/new', response_class=HTMLResponse)
 def teacher_create_classroom_get(
     request: Request,
@@ -582,6 +755,47 @@ def teacher_create_classroom_post(
         )
         session.add(membership)
         session.commit()
+=======
+@app.post('/classrooms/new')
+def create_classroom(request: Request, name: str = Form(...), current_user: User = Depends(get_current_user)):
+    """Allow teachers to create a new classroom that can host multiple users.
+
+    The creator is stored as a teacher membership for that classroom.
+    """
+    name_clean = (name or '').strip() or 'New classroom'
+    with Session(engine) as session:
+        # Only allow users with a teacher role (either site-wide or via any classroom membership)
+        is_teacher = getattr(current_user, 'site_role', None) == 'teacher'
+        if not is_teacher:
+            mem = session.exec(
+                select(Membership).where(
+                    (Membership.user_id == current_user.id)
+                    & (Membership.role.in_(['teacher', 'admin']))
+                )
+            ).first()
+            if mem:
+                is_teacher = True
+        if not is_teacher:
+            raise HTTPException(status_code=403, detail='Only teachers can create classrooms')
+
+        cls = Classroom(name=name_clean)
+        session.add(cls)
+        session.commit()
+        session.refresh(cls)
+
+        # Ensure creator is recorded as a teacher in this classroom
+        existing = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.classroom_id == cls.id)
+            )
+        ).first()
+        if not existing:
+            m = Membership(user_id=current_user.id, classroom_id=cls.id, role='teacher')
+            session.add(m)
+            session.commit()
+
+>>>>>>> 0b92d6c (Commit local UI and model changes)
     return RedirectResponse('/teacher', status_code=303)
 
 
@@ -736,6 +950,121 @@ def invite_student(
     return RedirectResponse(f"/classrooms/{classroom_id}", status_code=303)
 
 
+@app.post('/classrooms/{classroom_id}/invite-by-username')
+def invite_by_username(classroom_id: int, username: str = Form(...), current_user: User = Depends(get_current_user)):
+    """Invite an existing user to a classroom by their username.
+
+    If the user exists, a classroom_invite notification is sent to their
+    notification center where they can accept or decline.
+    """
+    uname = (username or '').strip()
+    if not uname:
+        return RedirectResponse(f"/classrooms/{classroom_id}/performance", status_code=303)
+
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+
+        # ensure current user is a teacher/admin in this classroom
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can invite')
+
+        target = session.exec(select(User).where(User.username == uname)).first()
+        if not target or target.id == current_user.id:
+            # nothing to do; silently return to classroom view
+            return RedirectResponse(f"/classrooms/{classroom_id}/performance", status_code=303)
+
+        # avoid sending an invite if already a member
+        existing = session.exec(
+            select(Membership).where(
+                (Membership.user_id == target.id)
+                & (Membership.classroom_id == classroom_id)
+            )
+        ).first()
+        if existing:
+            return RedirectResponse(f"/classrooms/{classroom_id}/performance", status_code=303)
+
+        try:
+            n = Notification(
+                recipient_id=target.id,
+                actor_id=current_user.id,
+                verb='classroom_invite',
+                target_type='classroom',
+                target_id=classroom_id,
+            )
+            session.add(n)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    return RedirectResponse(f"/classrooms/{classroom_id}/performance", status_code=303)
+
+
+@app.post('/api/classrooms/{classroom_id}/invite')
+def api_invite_student(classroom_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """JSON API to invite a student to a classroom by username.
+
+    Mirrors the behaviour of the HTML form endpoint but returns JSON
+    instead of redirecting. On success, a `classroom_invite` notification
+    is created for the target user.
+    """
+    uname = (payload.get('username') or '').strip()
+    if not uname:
+        raise HTTPException(status_code=400, detail='username required')
+
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can invite')
+
+        target = session.exec(select(User).where(User.username == uname)).first()
+        if not target or target.id == current_user.id:
+            raise HTTPException(status_code=404, detail='User not found')
+
+        existing = session.exec(
+            select(Membership).where(
+                (Membership.user_id == target.id)
+                & (Membership.classroom_id == classroom_id)
+            )
+        ).first()
+        if existing:
+            return JSONResponse({'ok': True, 'already_member': True})
+
+        try:
+            n = Notification(
+                recipient_id=target.id,
+                actor_id=current_user.id,
+                verb='classroom_invite',
+                target_type='classroom',
+                target_id=classroom_id,
+            )
+            session.add(n)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise HTTPException(status_code=500, detail='Failed to create invite')
+
+    return JSONResponse({'ok': True, 'invited_username': uname})
+
+
 @app.get('/invitations/respond', response_class=HTMLResponse)
 def invitations_respond(request: Request, token: str = Query(...), action: str = Query(...)):
     p = _verify_invite_token(token)
@@ -828,9 +1157,214 @@ def account_settings_post(request: Request, role: str = Form(...), current_user:
     return resp
 
 
+<<<<<<< HEAD
 @app.get('/classrooms/{classroom_id}/invite', response_class=HTMLResponse)
 def classroom_invite_get(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
     """Simple form for teachers/admins to invite students by email."""
+=======
+@app.get('/classrooms/{classroom_id}/performance', response_class=HTMLResponse)
+def classroom_performance(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Teacher-facing analytics page for a single classroom.
+
+    Backed by the same metrics as the Phase 1 API; shows per-teacher
+    assignment and upload counts plus submissions for their work.
+    """
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+        stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == classroom_id))
+        m = session.exec(stmt).first()
+        if not m or m.role not in ('teacher', 'admin'):
+            raise HTTPException(status_code=403, detail='Only teacher/admin can view performance')
+        # find teachers/admins in classroom
+        trows = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).all()
+        teachers = []
+        for tr in trows:
+            uid = tr.user_id
+            user = session.get(User, uid)
+            a_count = session.exec(
+                select(func.count(Assignment.id)).where(
+                    (Assignment.classroom_id == classroom_id)
+                    & (Assignment.created_by == uid)
+                )
+            ).first() or 0
+            u_count = session.exec(
+                select(func.count(LibraryItem.id)).where(
+                    (LibraryItem.classroom_id == classroom_id)
+                    & (LibraryItem.uploaded_by == uid)
+                )
+            ).first() or 0
+            # submissions received for assignments created by this teacher
+            aids = session.exec(
+                select(Assignment.id).where(
+                    (Assignment.classroom_id == classroom_id)
+                    & (Assignment.created_by == uid)
+                )
+            ).all()
+            aid_list = [r[0] if isinstance(r, (list, tuple)) else r for r in aids]
+            subs_count = 0
+            if aid_list:
+                subs_count = session.exec(
+                    select(func.count(Submission.id)).where(Submission.assignment_id.in_(aid_list))
+                ).first() or 0
+            teachers.append(
+                {
+                    'user_id': uid,
+                    'username': getattr(user, 'username', None),
+                    'assignments_count': int(a_count),
+                    'uploads_count': int(u_count),
+                    'submissions_count': int(subs_count),
+                }
+            )
+    return templates.TemplateResponse(
+        'teacher_performance.html',
+        {'request': request, 'classroom': c, 'teachers': teachers},
+    )
+
+
+@app.get('/api/classrooms/{classroom_id}/performance/students')
+def classroom_performance_students(classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Return per-student aggregated metrics for a classroom as JSON."""
+    with Session(engine) as session:
+        # permission: teacher/admin in classroom
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+            )
+        ).first()
+        if not mem or mem.role not in ('teacher', 'admin'):
+            raise HTTPException(status_code=403, detail='Only teacher/admin can view performance')
+        # list students in classroom
+        studs = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role == 'student')
+            )
+        ).all()
+        out = []
+        for s in studs:
+            uid = s.user_id
+            user = session.get(User, uid)
+            sub_count = session.exec(
+                select(func.count(Submission.id)).where(Submission.student_id == uid)
+            ).first() or 0
+            att_count = session.exec(
+                select(func.count(Attendance.id)).where(
+                    (Attendance.user_id == uid)
+                    & (Attendance.classroom_id == classroom_id)
+                )
+            ).first() or 0
+            events = session.exec(
+                select(func.count(StudentAnalytics.id)).where(
+                    (StudentAnalytics.user_id == uid)
+                    & (StudentAnalytics.classroom_id == classroom_id)
+                )
+            ).first() or 0
+            out.append(
+                {
+                    'user_id': uid,
+                    'username': getattr(user, 'username', None),
+                    'submissions_count': int(sub_count),
+                    'attendance_count': int(att_count),
+                    'events_count': int(events),
+                }
+            )
+    return JSONResponse({'students': out})
+
+
+@app.get('/classrooms/{classroom_id}/performance.csv')
+def classroom_performance_csv(classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Download classroom performance metrics as CSV for export."""
+    with Session(engine) as session:
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+            )
+        ).first()
+        if not mem or mem.role not in ('teacher', 'admin'):
+            raise HTTPException(status_code=403, detail='Only teacher/admin can view performance')
+        studs = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role == 'student')
+            )
+        ).all()
+        lines = ['student_id,username,submissions,attendance,events']
+        for s in studs:
+            uid = s.user_id
+            user = session.get(User, uid)
+            sub_count = session.exec(
+                select(func.count(Submission.id)).where(Submission.student_id == uid)
+            ).first() or 0
+            att_count = session.exec(
+                select(func.count(Attendance.id)).where(
+                    (Attendance.user_id == uid)
+                    & (Attendance.classroom_id == classroom_id)
+                )
+            ).first() or 0
+            events = session.exec(
+                select(func.count(StudentAnalytics.id)).where(
+                    (StudentAnalytics.user_id == uid)
+                    & (StudentAnalytics.classroom_id == classroom_id)
+                )
+            ).first() or 0
+            lines.append(
+                f"{uid},{getattr(user,'username', '')},{int(sub_count)},{int(att_count)},{int(events)}"
+            )
+    csv_text = '\n'.join(lines)
+    return Response(content=csv_text, media_type='text/csv')
+
+
+@app.get('/classrooms/{classroom_id}/library', response_class=HTMLResponse)
+def classroom_library_page(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
+    """HTML view of a classroom's library and assignments.
+
+    This backs the "Class library" button on the Teaching Hub.
+    """
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+        member = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.classroom_id == classroom_id)
+            )
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail='Not a classroom member')
+        items = session.exec(
+            select(LibraryItem)
+            .where(LibraryItem.classroom_id == classroom_id)
+            .order_by(LibraryItem.created_at.desc())
+        ).all()
+        assignments = session.exec(
+            select(Assignment)
+            .where(Assignment.classroom_id == classroom_id)
+            .order_by(Assignment.created_at.desc())
+        ).all()
+    return templates.TemplateResponse(
+        'classroom.html',
+        {
+            'request': request,
+            'classroom': c,
+            'member': member,
+            'items': items,
+            'assignments': assignments,
+        },
+    )
+
+@app.get('/classrooms/{classroom_id}')
+def get_classroom(classroom_id: int, current_user: User = Depends(get_current_user_optional)):
+>>>>>>> 0b92d6c (Commit local UI and model changes)
     with Session(engine) as session:
         c = session.get(Classroom, classroom_id)
         if not c:
@@ -1616,6 +2150,7 @@ def school_audit_log(
             q = q.where(StudentAnalytics.event_type == event_type)
         if from_date:
             try:
+<<<<<<< HEAD
                 start = datetime.fromisoformat(from_date)
                 q = q.where(StudentAnalytics.created_at >= start)
             except Exception:
@@ -1657,6 +2192,36 @@ def school_audit_log(
             'total': int(total),
         },
     )
+=======
+                with dst_path.open('wb') as out:
+                    shutil.copyfileobj(file.file, out)
+            finally:
+                try:
+                    file.file.close()
+                except Exception:
+                    pass
+            li = LibraryItem(classroom_id=classroom_id, presentation_id=None, title=title or Path(file.filename).name, filename=str(Path('classroom') / str(classroom_id) / safe_name), mimetype=(file.content_type or 'application/octet-stream'), uploaded_by=current_user.id)
+            session.add(li)
+            session.commit()
+            session.refresh(li)
+            # analytics: classroom material upload
+            try:
+                sa = StudentAnalytics(user_id=current_user.id, classroom_id=classroom_id, event_type='upload', details=f'library_item={li.id}')
+                session.add(sa)
+                session.commit()
+            except Exception:
+                session.rollback()
+            # also post a system-style message into classroom chat so the
+            # upload is visible in the class conversation
+            try:
+                msg_text = f"uploaded new classroom material: {li.title or Path(file.filename).name}"
+                cm = ClassroomMessage(classroom_id=classroom_id, sender_id=current_user.id, content=msg_text)
+                session.add(cm)
+                session.commit()
+            except Exception:
+                session.rollback()
+            return RedirectResponse(f"/classrooms/{classroom_id}/library", status_code=303)
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 
 
 @app.get('/schools/{school_id}/audit.csv')
@@ -1834,6 +2399,7 @@ def download_submission(submission_id: int, current_user: User = Depends(get_cur
                 return FileResponse(str(disk_path), media_type=s.mimetype or 'application/octet-stream', filename=Path(s.filename).name)
 
 
+<<<<<<< HEAD
 @app.post('/assignments/{assignment_id}/submit')
 async def submit_assignment(request: Request, assignment_id: int, file: UploadFile = File(...), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
     validate_csrf(request, csrf_token)
@@ -1854,6 +2420,128 @@ async def submit_assignment(request: Request, assignment_id: int, file: UploadFi
             with dst_path.open('wb') as out:
                 shutil.copyfileobj(file.file, out)
         finally:
+=======
+        @app.post('/classrooms/{classroom_id}/assignments')
+        def create_assignment(request: Request, classroom_id: int, title: str = Form(...), description: Optional[str] = Form(None), due_date: Optional[str] = Form(None), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+            validate_csrf(request, csrf_token)
+            with Session(engine) as session:
+                c = session.get(Classroom, classroom_id)
+                if not c:
+                    raise HTTPException(status_code=404, detail='Classroom not found')
+                stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == classroom_id))
+                m = session.exec(stmt).first()
+                if not m or m.role not in ('teacher', 'admin'):
+                    raise HTTPException(status_code=403, detail='Only teacher/admin can create assignments')
+                adt = None
+                if due_date:
+                    try:
+                        adt = datetime.fromisoformat(due_date)
+                    except Exception:
+                        adt = None
+                a = Assignment(classroom_id=classroom_id, title=title, description=description, due_date=adt, created_by=current_user.id)
+                session.add(a)
+                session.commit()
+                session.refresh(a)
+                # analytics: assignment created
+                try:
+                    sa = StudentAnalytics(user_id=current_user.id, classroom_id=classroom_id, event_type='assignment_create', details=f'assignment={a.id}')
+                    session.add(sa)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                return RedirectResponse(f"/classrooms/{classroom_id}/library", status_code=303)
+
+
+        @app.post('/assignments/{assignment_id}/submit')
+        async def submit_assignment(request: Request, assignment_id: int, file: UploadFile = File(...), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+            validate_csrf(request, csrf_token)
+            with Session(engine) as session:
+                a = session.get(Assignment, assignment_id)
+                if not a:
+                    raise HTTPException(status_code=404, detail='Assignment not found')
+                # must be member
+                stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == a.classroom_id))
+                m = session.exec(stmt).first()
+                if not m:
+                    raise HTTPException(status_code=403, detail='Not a classroom member')
+                dst_dir = Path(UPLOAD_DIR) / 'classroom' / str(a.classroom_id) / 'assignments' / str(assignment_id)
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                safe_name = f"{uuid.uuid4().hex}_{Path(file.filename).name}"
+                dst_path = dst_dir / safe_name
+                try:
+                    with dst_path.open('wb') as out:
+                        shutil.copyfileobj(file.file, out)
+                finally:
+                    try:
+                        file.file.close()
+                    except Exception:
+                        pass
+                s = Submission(assignment_id=assignment_id, student_id=current_user.id, filename=str(Path('classroom') / str(a.classroom_id) / 'assignments' / str(assignment_id) / safe_name), mimetype=(file.content_type or 'application/octet-stream'))
+                session.add(s)
+                session.commit()
+                session.refresh(s)
+                # analytics: assignment submission
+                try:
+                    sa = StudentAnalytics(user_id=current_user.id, classroom_id=a.classroom_id, event_type='submission', details=f'assignment={assignment_id};submission={s.id}')
+                    session.add(sa)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                return RedirectResponse(f"/classrooms/{a.classroom_id}/library", status_code=303)
+
+
+        @app.get('/assignments/{assignment_id}/submissions')
+        def list_submissions(assignment_id: int, current_user: User = Depends(get_current_user)):
+            with Session(engine) as session:
+                a = session.get(Assignment, assignment_id)
+                if not a:
+                    raise HTTPException(status_code=404, detail='Assignment not found')
+                stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == a.classroom_id))
+                m = session.exec(stmt).first()
+                if not m or m.role not in ('teacher', 'admin'):
+                    raise HTTPException(status_code=403, detail='Only teacher/admin can view submissions')
+                subs = session.exec(select(Submission).where(Submission.assignment_id == assignment_id).order_by(Submission.created_at.desc())).all()
+                return templates.TemplateResponse('assignment_submissions.html', {'request': Request, 'assignment': a, 'submissions': subs, 'classroom_id': a.classroom_id})
+
+
+        @app.post('/submissions/{submission_id}/grade')
+        def grade_submission(request: Request, submission_id: int, grade: float = Form(...), feedback: Optional[str] = Form(None), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+            validate_csrf(request, csrf_token)
+            with Session(engine) as session:
+                s = session.get(Submission, submission_id)
+                if not s:
+                    raise HTTPException(status_code=404, detail='Submission not found')
+                a = session.get(Assignment, s.assignment_id)
+                stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == a.classroom_id))
+                m = session.exec(stmt).first()
+                if not m or m.role not in ('teacher', 'admin'):
+                    raise HTTPException(status_code=403, detail='Only teacher/admin can grade')
+                s.grade = float(grade)
+                s.feedback = feedback
+                session.add(s)
+                session.commit()
+                return RedirectResponse(f"/assignments/{a.id}/submissions", status_code=303)
+
+
+        @app.post('/submissions/{submission_id}/autograde')
+        def autograde_submission(request: Request, submission_id: int, csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+            validate_csrf(request, csrf_token)
+            """Trigger autograding for a submission (teacher/admin only)."""
+            with Session(engine) as session:
+                s = session.get(Submission, submission_id)
+                if not s:
+                    raise HTTPException(status_code=404, detail='Submission not found')
+                a = session.get(Assignment, s.assignment_id)
+                if not a:
+                    raise HTTPException(status_code=404, detail='Assignment not found')
+                # permission check
+                stmt = select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == a.classroom_id))
+                m = session.exec(stmt).first()
+                if not m or m.role not in ('teacher', 'admin'):
+                    raise HTTPException(status_code=403, detail='Only teacher/admin can autograde')
+
+            # try to enqueue; fall back to synchronous
+>>>>>>> 0b92d6c (Commit local UI and model changes)
             try:
                 file.file.close()
             except Exception:
@@ -2013,7 +2701,10 @@ async def add_current_user_to_request(request: Request, call_next):
             email=getattr(_u, "email", None),
             is_premium=getattr(_u, "is_premium", False),
             avatar=getattr(_u, "avatar", None),
+<<<<<<< HEAD
             # keep the up-to-date role so templates always reflect changes
+=======
+>>>>>>> 0b92d6c (Commit local UI and model changes)
             site_role=getattr(_u, "site_role", None),
         )
     else:
@@ -2627,6 +3318,22 @@ def upload_library_item(classroom_id: int, title: str = Form(None), file: Upload
         session.add(li)
         session.commit()
         session.refresh(li)
+        # analytics: classroom material upload (API flow)
+        try:
+            sa = StudentAnalytics(user_id=current_user.id, classroom_id=classroom_id, event_type="upload", details=f"library_item={li.id}")
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+        # also emit a classroom chat message so the upload shows up
+        # in the group conversation
+        try:
+            msg_text = f"uploaded new classroom material: {li.title or (file.filename or 'File')}"
+            cm = ClassroomMessage(classroom_id=classroom_id, sender_id=current_user.id, content=msg_text)
+            session.add(cm)
+            session.commit()
+        except Exception:
+            session.rollback()
         return JSONResponse({"ok": True, "library_item": {"id": li.id, "presentation_id": p.id}})
 
 
@@ -3319,6 +4026,19 @@ def featured_page(request: Request):
         for f in featured:
             setattr(f, 'bookmarks_count', bc.get(getattr(f, 'id', None), 0))
 
+        # attach like counts for featured items
+        if feat_ids:
+            rows_likes = session.exec(
+                select(Like.presentation_id, func.count(Like.id))
+                .where(Like.presentation_id.in_(list(feat_ids)))
+                .group_by(Like.presentation_id)
+            ).all()
+            lc = {int(r[0]): int(r[1]) for r in rows_likes}
+        else:
+            lc = {}
+        for f in featured:
+            setattr(f, 'likes_count', lc.get(getattr(f, 'id', None), 0))
+
         # attach owner's presentation counts for featured owners
         feat_owner_ids = {f.owner_id for f in featured if getattr(f, 'owner_id', None) is not None}
         if feat_owner_ids:
@@ -3531,6 +4251,23 @@ def contact_post(
 
     except Exception:
         # ignore persistence errors for contact form; fall through to acknowledgement
+        pass
+
+    # Always email site owner with the contact message so nothing is missed.
+    try:
+        sender_label = f"{name} <{email}>" if email else name
+        subject = f"New contact message from {sender_label}"
+        meta_lines = []
+        if current_user and getattr(current_user, 'id', None):
+            meta_lines.append(f"Signed-in user id: {current_user.id}, username: {current_user.username}")
+        if owner_id or owner_username:
+            meta_lines.append(f"Owner context - id: {owner_id}, username: {owner_username}")
+        meta_block = ("\n\n" + "\n".join(meta_lines)) if meta_lines else ""
+        body = f"From: {sender_label}\nEmail: {email}\n\nMessage:\n{message}{meta_block}"
+        # Hard-code destination so all contact form submissions land in one inbox.
+        send_email("shammahbadman@gmail.com", subject, body)
+    except Exception:
+        # Email failures should not break the contact form UX.
         pass
 
     # If this was an AJAX/JSON request, return JSON (clean for client JS). Otherwise render template
@@ -3782,13 +4519,29 @@ def api_get_notifications(request: Request, limit: int = Query(50)):
     if not current:
         raise HTTPException(status_code=401, detail='Authentication required')
     from .models import Notification as NotificationModel
+    notif_filter = request.query_params.get('filter') or ''
     with Session(engine) as session:
+<<<<<<< HEAD
         rows = session.exec(
             select(NotificationModel)
             .where((NotificationModel.recipient_id == current.id) & (NotificationModel.verb != 'message'))
             .order_by(NotificationModel.created_at.desc())
             .limit(limit)
         ).all()
+=======
+        stmt = select(NotificationModel).where(NotificationModel.recipient_id == current.id)
+        if notif_filter == 'unread':
+            stmt = stmt.where(NotificationModel.read == False)  # noqa: E712
+        elif notif_filter == 'messages':
+            stmt = stmt.where(NotificationModel.verb == 'message')
+        elif notif_filter == 'uploads':
+            stmt = stmt.where(NotificationModel.verb == 'new_upload')
+        elif notif_filter == 'classrooms':
+            stmt = stmt.where(NotificationModel.verb == 'classroom_invite')
+
+        stmt = stmt.order_by(NotificationModel.created_at.desc()).limit(limit)
+        rows = session.exec(stmt).all()
+>>>>>>> 0b92d6c (Commit local UI and model changes)
         out = []
         for n in rows:
             actor_username = None
@@ -3841,7 +4594,12 @@ def api_mark_notification_read(nid: int, request: Request):
 def api_clear_notifications(request: Request):
     """Delete all notifications for the current user.
 
+<<<<<<< HEAD
     Used by the notification center "Clear feed" action.
+=======
+    Used by the "Clear" / "Clear feed" buttons to completely
+    empty the notification center for the signed-in user.
+>>>>>>> 0b92d6c (Commit local UI and model changes)
     """
     current = getattr(request.state, 'current_user', None)
     if not current:
@@ -3852,19 +4610,107 @@ def api_clear_notifications(request: Request):
             select(NotificationModel).where(NotificationModel.recipient_id == current.id)
         ).all()
         for n in rows:
+<<<<<<< HEAD
+=======
+            # Hard-delete each notification for this user so the
+            # Notification Center and badge are fully cleared.
+>>>>>>> 0b92d6c (Commit local UI and model changes)
             session.delete(n)
         session.commit()
     return JSONResponse({'ok': True})
 
+<<<<<<< HEAD
+=======
+
+@app.post('/notifications/classroom-invite/{nid}/accept')
+def accept_classroom_invite(nid: int, current_user: User = Depends(get_current_user)):
+    """Accept a classroom invite delivered via notifications.
+
+    Creates a student membership for the current user in the target classroom.
+    """
+    from .models import Notification as NotificationModel
+
+    with Session(engine) as session:
+        n = session.get(NotificationModel, nid)
+        if (not n or n.recipient_id != current_user.id or
+                n.verb != 'classroom_invite' or n.target_type != 'classroom'):
+            raise HTTPException(status_code=404, detail='Invitation not found')
+
+        classroom = session.get(Classroom, n.target_id)
+        if not classroom:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+
+        # add membership if missing
+        exists = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.classroom_id == classroom.id)
+            )
+        ).first()
+        if not exists:
+            m = Membership(user_id=current_user.id, classroom_id=classroom.id, role='student')
+            session.add(m)
+
+        n.read = True
+        session.add(n)
+        session.commit()
+
+    return RedirectResponse('/notifications', status_code=303)
+
+
+@app.post('/notifications/classroom-invite/{nid}/decline')
+def decline_classroom_invite(nid: int, current_user: User = Depends(get_current_user)):
+    """Decline a classroom invite delivered via notifications."""
+    from .models import Notification as NotificationModel
+
+    with Session(engine) as session:
+        n = session.get(NotificationModel, nid)
+        if (not n or n.recipient_id != current_user.id or
+                n.verb != 'classroom_invite' or n.target_type != 'classroom'):
+            raise HTTPException(status_code=404, detail='Invitation not found')
+
+        n.read = True
+        session.add(n)
+        session.commit()
+
+    return RedirectResponse('/notifications', status_code=303)
+
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 @app.get("/notifications", response_class=HTMLResponse)
 def notifications_page(request: Request, current_user: User = Depends(get_current_user)):
-    """Full notifications page showing all notifications for the signed-in user."""
+    """Full notifications page showing all notifications for the signed-in user.
+
+    Supports an optional `filter` query parameter that mirrors the small
+    notifications panel:
+      - filter=unread -> only unread notifications
+      - filter=messages -> direct message notifications
+      - filter=uploads -> new upload notifications
+      - filter=classrooms -> classroom invite notifications
+    """
+    active_filter = request.query_params.get("filter") if request else None
     with Session(engine) as session:
         from .models import Notification as NotificationModel
+
+        query = select(NotificationModel).where(
+            NotificationModel.recipient_id == current_user.id
+        )
+        if active_filter == "unread":
+            query = query.where(NotificationModel.read == False)  # noqa: E712
+        elif active_filter == "messages":
+            query = query.where(NotificationModel.verb == "message")
+        elif active_filter == "uploads":
+            query = query.where(NotificationModel.verb == "new_upload")
+        elif active_filter == "classrooms":
+            query = query.where(NotificationModel.verb == "classroom_invite")
+
         rows = session.exec(
+<<<<<<< HEAD
             select(NotificationModel)
             .where((NotificationModel.recipient_id == current_user.id) & (NotificationModel.verb != "message"))
             .order_by(NotificationModel.created_at.desc())
+=======
+            query.order_by(NotificationModel.created_at.desc())
+>>>>>>> 0b92d6c (Commit local UI and model changes)
         ).all()
 
         notif_items = []
@@ -3889,6 +4735,12 @@ def notifications_page(request: Request, current_user: User = Depends(get_curren
                     if u:
                         actor_username = actor_username or u.username
                         link = f"/users/{u.username}"
+                elif n.target_type == "classroom" and n.target_id:
+                    c = session.get(Classroom, n.target_id)
+                    if c:
+                        target_title = c.name
+                        # send teachers to the performance view for that classroom
+                        link = f"/classrooms/{n.target_id}/performance"
             except Exception:
                 pass
 
@@ -3911,8 +4763,28 @@ def notifications_page(request: Request, current_user: User = Depends(get_curren
                 message = "sent you a message"
                 if n.target_id:
                     link = f"/messages/{n.actor_id or ''}".rstrip("/")
+            elif n.verb == "new_upload":
+                if target_title:
+                    message = f"uploaded a new presentation \"{target_title}\""
+                else:
+                    message = "uploaded a new presentation"
+            elif n.verb == "classroom_invite":
+                if target_title:
+                    message = f"invited you to join \"{target_title}\""
+                else:
+                    message = "invited you to join a classroom"
             else:
                 message = n.verb
+
+            accept_url = None
+            decline_url = None
+            if (
+                n.verb == "classroom_invite"
+                and n.target_type == "classroom"
+                and not n.read
+            ):
+                accept_url = f"/notifications/classroom-invite/{n.id}/accept"
+                decline_url = f"/notifications/classroom-invite/{n.id}/decline"
 
             notif_items.append(
                 SimpleNamespace(
@@ -3923,12 +4795,19 @@ def notifications_page(request: Request, current_user: User = Depends(get_curren
                     actor_username=actor_username,
                     actor_avatar=actor_avatar,
                     link=link,
+                    accept_url=accept_url,
+                    decline_url=decline_url,
                 )
             )
 
     return templates.TemplateResponse(
         "notifications.html",
-        {"request": request, "notifications": notif_items, "current_user": current_user},
+        {
+            "request": request,
+            "notifications": notif_items,
+            "current_user": current_user,
+            "active_filter": active_filter,
+        },
     )
 
 
@@ -4010,6 +4889,11 @@ async def api_post_message(other_id: int, request: Request, file: UploadFile | N
             'file': file_url,
             'thumbnail': thumbnail_url,
             'created_at': m.created_at.isoformat(),
+            # sender metadata for richer chat UI (avatar, badges, names)
+            'username': getattr(current, 'username', None),
+            'full_name': getattr(current, 'full_name', None),
+            'avatar': getattr(current, 'avatar', None),
+            'site_role': getattr(current, 'site_role', None),
         }
 
         # no Notification row for direct messages; unread state is tracked
@@ -4277,6 +5161,9 @@ async def upload_post(
     file: UploadFile = File(None),
     tags: str = Form(None),
     category: str = Form(None),
+    privacy: str = Form("public"),
+    license: str = Form("all_rights_reserved"),
+    allow_download: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
 ):
     def render_error(msg: str):
@@ -4346,12 +5233,18 @@ async def upload_post(
                     )
                 buffer.write(chunk)
 
+        # normalise advanced settings
+        privacy_val = privacy if privacy in {"public", "private"} else "public"
+        allow_download_val = bool(allow_download)
+
         p = Presentation(
             title=title_clean,
             description=desc_clean,
             filename=unique_name,
             mimetype=file.content_type or "application/octet-stream",
             owner_id=current_user.id,
+            privacy=privacy_val,
+            allow_download=allow_download_val,
         )
         with Session(engine) as session:
             # handle category (auto-classify when missing)
@@ -4419,8 +5312,30 @@ async def upload_post(
                 pass
             presentation_id = p.id
 
+            # notify followers that a new presentation was uploaded
+            try:
+                followers = session.exec(
+                    select(Follow.follower_id).where(Follow.following_id == current_user.id)
+                ).all()
+                for row in followers:
+                    fid = row[0] if isinstance(row, (list, tuple)) else row
+                    if not fid:
+                        continue
+                    n = Notification(
+                        recipient_id=int(fid),
+                        actor_id=current_user.id,
+                        verb='new_upload',
+                        target_type='presentation',
+                        target_id=p.id,
+                    )
+                    session.add(n)
+                session.commit()
+            except Exception:
+                session.rollback()
+
         return RedirectResponse(
-            url=f"/presentations/{presentation_id}", status_code=status.HTTP_302_FOUND
+            url=f"/presentations/{presentation_id}?just_uploaded=1",
+            status_code=status.HTTP_302_FOUND,
         )
     except Exception:
         logger.exception("Upload failed")
@@ -4484,6 +5399,8 @@ async def api_upload(
             filename=unique_name,
             mimetype=file.content_type,
             owner_id=current_user.id if current_user else None,
+            privacy="public",
+            allow_download=True,
         )
 
         # optional category
@@ -4515,6 +5432,7 @@ async def api_upload(
                 session.add(link)
             session.commit()
 
+<<<<<<< HEAD
         # conversion/preview generation for API uploads: always enqueue Redis/RQ job and attempt sync fallback
         if file_ext in {".ppt", ".pptx", ".pptm"}:
             try:
@@ -4527,6 +5445,28 @@ async def api_upload(
                 convert_presentation(p.id, unique_name)
             except Exception:
                 pass
+=======
+        # notify followers of this creator about the new upload
+        try:
+            followers = session.exec(
+                select(Follow.follower_id).where(Follow.following_id == current_user.id)
+            ).all()
+            for row in followers:
+                fid = row[0] if isinstance(row, (list, tuple)) else row
+                if not fid:
+                    continue
+                n = Notification(
+                    recipient_id=int(fid),
+                    actor_id=current_user.id,
+                    verb='new_upload',
+                    target_type='presentation',
+                    target_id=p.id,
+                )
+                session.add(n)
+            session.commit()
+        except Exception:
+            session.rollback()
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 
     return {
         "id": p.id,
@@ -4576,6 +5516,12 @@ def ai_rewrite(
 
 @app.get("/presentations/{presentation_id}", response_class=HTMLResponse)
 def view_presentation(request: Request, presentation_id: int):
+    current_user = get_current_user_optional(request)
+    if not current_user:
+        # Force sign-in before viewing any presentation detail page
+        next_url = request.url.path
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=status.HTTP_303_SEE_OTHER)
+
     owner_username = None
     owner_email = None
     with Session(engine) as session:
@@ -4584,6 +5530,11 @@ def view_presentation(request: Request, presentation_id: int):
             raise HTTPException(status_code=404, detail="Not found")
         # Resolve owner safely and increment views on the persisted model
         owner = session.get(User, p.owner_id) if p.owner_id else None
+        # Enforce privacy: only the owner can see private presentations
+        if getattr(p, "privacy", "public") == "private" and (
+            not current_user or current_user.id != getattr(p, "owner_id", None)
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
         p.views = (p.views or 0) + 1
         session.add(p)
         session.commit()
@@ -5190,7 +6141,7 @@ def get_slide_image(presentation_id: int, index: int):
     return FileResponse(path, media_type="image/png", filename=path.name)
 
 
-@app.get("/presentations/{presentation_id}/converted_pdf")
+@app.api_route("/presentations/{presentation_id}/converted_pdf", methods=["GET", "HEAD"])
 def get_converted_pdf(presentation_id: int, inline: bool = Query(False)):
     with Session(engine) as session:
         job = session.exec(
@@ -5240,10 +6191,40 @@ def download_file(request: Request, filename: str, inline: bool = Query(False)):
         return PlainTextResponse("ok", status_code=200)
 
     if not path.exists():
-        logging.getLogger("uvicorn.error").warning(f"download requested but file not found: {path}")
+        # If the original file is missing, fall back to a static placeholder
+        # for inline previews (used by featured cards) instead of noisy 404s.
+        if inline:
+            try:
+                placeholder_url = request.url_for("static", path="slide-placeholder.svg")
+                return RedirectResponse(placeholder_url, status_code=302)
+            except Exception:
+                # If static lookup fails, just return a lightweight 404.
+                raise HTTPException(status_code=404, detail="Not found")
+        # For non-inline downloads, return a quiet 404 without extra logging.
         raise HTTPException(status_code=404, detail="Not found")
 
     guessed_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+    # Look up the owning presentation (if any) to enforce privacy/download rules.
+    from .models import Presentation as PresentationModel
+    current_user = get_current_user_optional(request)
+    with Session(engine) as session:
+        pres = session.exec(
+            select(PresentationModel).where(PresentationModel.filename == filename)
+        ).first()
+
+    if pres is not None:
+        privacy_val = getattr(pres, "privacy", "public") or "public"
+        allow_dl = getattr(pres, "allow_download", True)
+        owner_id = getattr(pres, "owner_id", None)
+
+        # Private presentations are only visible to their owner (both inline and download).
+        if privacy_val == "private" and (not current_user or current_user.id != owner_id):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # For non-inline downloads, enforce the allow_download flag for non-owners.
+        if not inline and not allow_dl and (not current_user or current_user.id != owner_id):
+            raise HTTPException(status_code=403, detail="Downloads are disabled for this file")
 
     # For inline view, use the real media type and explicit inline disposition.
     if inline:
@@ -5285,6 +6266,87 @@ def post_comment(
     return RedirectResponse(
         url=f"/presentations/{presentation_id}", status_code=status.HTTP_302_FOUND
     )
+
+
+@app.post("/presentations/{presentation_id}/delete")
+def delete_presentation(
+    presentation_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    """Allow the owner of a presentation to delete it.
+
+    Removes the Presentation record, associated likes, bookmarks, comments,
+    classroom library items, conversion jobs, AI results, and related files
+    on disk (original upload, converted PDF, and thumbnails).
+    """
+    with Session(engine) as session:
+        p = session.get(Presentation, presentation_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Presentation not found")
+        if p.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this presentation")
+
+        # Collect file paths before deleting DB rows
+        original_path = Path(UPLOAD_DIR) / p.filename if getattr(p, "filename", None) else None
+        thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
+
+        # Delete likes, bookmarks, comments
+        for model in (Like, Bookmark, Comment):
+            rows = session.exec(
+                select(model).where(model.presentation_id == presentation_id)
+            ).all()
+            for row in rows:
+                session.delete(row)
+
+        # Delete classroom library items that reference this presentation
+        lib_items = session.exec(
+            select(LibraryItem).where(LibraryItem.presentation_id == presentation_id)
+        ).all()
+        for item in lib_items:
+            session.delete(item)
+
+        # Delete conversion jobs and remember their output files
+        jobs = session.exec(
+            select(ConversionJob).where(ConversionJob.presentation_id == presentation_id)
+        ).all()
+        conv_paths = []
+        for job in jobs:
+            if getattr(job, "result", None):
+                conv_paths.append(Path(UPLOAD_DIR) / job.result)
+            session.delete(job)
+
+        # Delete any stored AI results for this presentation
+        ai_rows = session.exec(
+            select(AIResult).where(AIResult.presentation_id == presentation_id)
+        ).all()
+        for ar in ai_rows:
+            session.delete(ar)
+
+        # Finally delete the presentation itself
+        session.delete(p)
+        session.commit()
+
+    # Best-effort cleanup of files on disk (ignore errors)
+    try:
+        if original_path and original_path.exists():
+            original_path.unlink()
+    except Exception:
+        logger.exception("Failed to delete original presentation file", extra={"presentation_id": presentation_id})
+
+    try:
+        for cp in conv_paths:
+            if cp and cp.exists():
+                cp.unlink()
+    except Exception:
+        logger.exception("Failed to delete converted presentation file", extra={"presentation_id": presentation_id})
+
+    try:
+        if thumbs_dir.exists():
+            shutil.rmtree(thumbs_dir, ignore_errors=True)
+    except Exception:
+        logger.exception("Failed to delete thumbnails directory", extra={"presentation_id": presentation_id})
+
+    return RedirectResponse(url="/upload?scope=mine", status_code=status.HTTP_302_FOUND)
 
 
 @app.post("/presentations/{presentation_id}/like")
@@ -5376,6 +6438,17 @@ def profile_view(
             .order_by(Presentation.created_at.desc())
         ).all()
         presentations = []
+        # batch-like counts
+        pres_ids = [p.id for p in presentations_raw]
+        likes_map: dict[int, int] = {}
+        if pres_ids:
+            rows_likes = session.exec(
+                select(Like.presentation_id, func.count(Like.id))
+                .where(Like.presentation_id.in_(list(pres_ids)))
+                .group_by(Like.presentation_id)
+            ).all()
+            likes_map = {int(r[0]): int(r[1]) for r in rows_likes}
+
         for p in presentations_raw:
             owner = getattr(p, "owner", None)
             cat = getattr(p, "category", None)
@@ -5388,8 +6461,9 @@ def profile_view(
                     mimetype=p.mimetype,
                     owner_id=p.owner_id,
                     owner_username=getattr(owner, "username", None) if owner else None,
-                        owner_email=getattr(owner, "email", None) if owner else None,
+                    owner_email=getattr(owner, "email", None) if owner else None,
                     views=getattr(p, "views", None),
+                    likes_count=likes_map.get(p.id, 0),
                     cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
                     category=SimpleNamespace(name=cat.name) if cat is not None else None,
                     created_at=getattr(p, "created_at", None),
@@ -5444,6 +6518,16 @@ def bookmarks_view(request: Request, current_user: User = Depends(get_current_us
                 .order_by(Presentation.created_at.desc())
             ).all()
             presentations = []
+            pres_ids = [p.id for p in pres_raw]
+            likes_map: dict[int, int] = {}
+            if pres_ids:
+                rows_likes = session.exec(
+                    select(Like.presentation_id, func.count(Like.id))
+                    .where(Like.presentation_id.in_(list(pres_ids)))
+                    .group_by(Like.presentation_id)
+                ).all()
+                likes_map = {int(r[0]): int(r[1]) for r in rows_likes}
+
             for p in pres_raw:
                 owner = getattr(p, 'owner', None)
                 cat = getattr(p, 'category', None)
@@ -5457,6 +6541,7 @@ def bookmarks_view(request: Request, current_user: User = Depends(get_current_us
                         owner_id=p.owner_id,
                         owner_username=getattr(owner, 'username', None) if owner else None,
                         views=getattr(p, 'views', None),
+                        likes_count=likes_map.get(p.id, 0),
                         cover_url=getattr(p, 'cover_url', None) if hasattr(p, 'cover_url') else None,
                         category=SimpleNamespace(name=cat.name) if cat is not None else None,
                     )
@@ -5688,6 +6773,11 @@ async def websocket_chat(websocket: WebSocket, other_id: int):
                     "to": to_id,
                     "content": content,
                     "created_at": msg.created_at.isoformat(),
+                    # sender metadata for richer chat UI (avatar, badges, names)
+                    "username": getattr(user, "username", None),
+                    "full_name": getattr(user, "full_name", None),
+                    "avatar": getattr(user, "avatar", None),
+                    "site_role": getattr(user, "site_role", None),
                 }
                 # send to recipient if online
                 await manager.send_personal(to_id, out)
@@ -5734,25 +6824,189 @@ def get_messages(other_id: int, current_user: User = Depends(get_current_user)):
         except Exception:
             session.rollback()
 
-        # return most recent 50
-        out = [
-            {
-                "id": m.id,
-                "from": m.sender_id,
-                "to": m.recipient_id,
+        # load sender metadata for both participants so chat bubbles can
+        # display names, avatars, and role badges
+        participant_ids = {int(current_user.id), int(other_id)}
+        users = session.exec(select(User).where(User.id.in_(participant_ids))).all()
+        user_map = {int(u.id): u for u in users}
+
+        # return most recent 50 (reverse-chronological in DB, sliced then serialized)
+        out = []
+        for m in msgs[:50]:
+            sender = user_map.get(int(m.sender_id))
+            out.append(
+                {
+                    "id": m.id,
+                    "from": m.sender_id,
+                    "to": m.recipient_id,
                     "content": m.content,
                     "file": m.file_url,
                     "thumbnail": m.thumbnail_url,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in msgs[:50]
-        ]
+                    "created_at": m.created_at.isoformat(),
+                    "username": getattr(sender, "username", None) if sender else None,
+                    "full_name": getattr(sender, "full_name", None) if sender else None,
+                    "avatar": getattr(sender, "avatar", None) if sender else None,
+                    "site_role": getattr(sender, "site_role", None) if sender else None,
+                }
+            )
     return JSONResponse(out)
 
 
 @app.get('/api/online/{user_id}')
 def api_online(user_id: int):
     return JSONResponse({"online": manager.is_online(user_id)})
+
+
+@app.get('/api/classrooms/{classroom_id}/chat/messages')
+def classroom_chat_messages(classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Return recent classroom chat messages with sender metadata.
+
+    Only members (student/teacher/admin) of the classroom can access.
+    """
+    with Session(engine) as session:
+        classroom = session.get(Classroom, classroom_id)
+        if not classroom:
+            raise HTTPException(status_code=404, detail="Classroom not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this classroom")
+
+        rows = (
+            session.exec(
+                select(ClassroomMessage, User)
+                .where(ClassroomMessage.classroom_id == classroom_id)
+                .join(User, User.id == ClassroomMessage.sender_id)
+                .order_by(ClassroomMessage.created_at.desc())
+            )
+            .all()
+        )
+        messages = []
+        for msg, user in rows[:100]:
+            messages.append(
+                {
+                    "id": msg.id,
+                    "sender_id": msg.sender_id,
+                    "username": getattr(user, "username", None),
+                    "full_name": getattr(user, "full_name", None),
+                    "avatar": getattr(user, "avatar", None),
+                    "site_role": getattr(user, "site_role", None),
+                    "content": msg.content,
+                    "created_at": msg.created_at.isoformat(),
+                }
+            )
+        # analytics: record a chat view / last-seen marker for this classroom
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                classroom_id=classroom_id,
+                event_type="chat_view",
+                details=f"messages={len(messages)}",
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+    messages.reverse()
+    return JSONResponse({"messages": messages})
+
+
+@app.post('/api/classrooms/{classroom_id}/chat/messages')
+def classroom_chat_post(
+    classroom_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Post a new classroom chat message for all members to see."""
+    content = (payload.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty message")
+
+    with Session(engine) as session:
+        classroom = session.get(Classroom, classroom_id)
+        if not classroom:
+            raise HTTPException(status_code=404, detail="Classroom not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this classroom")
+
+        msg = ClassroomMessage(
+            classroom_id=classroom_id,
+            sender_id=current_user.id,
+            content=content,
+        )
+        session.add(msg)
+        session.commit()
+        session.refresh(msg)
+
+        out = {
+            "id": msg.id,
+            "sender_id": msg.sender_id,
+            "username": current_user.username,
+            "full_name": current_user.full_name,
+            "avatar": current_user.avatar,
+            "site_role": current_user.site_role,
+            "content": msg.content,
+            "created_at": msg.created_at.isoformat(),
+        }
+
+        # analytics: classroom chat message sent
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                classroom_id=classroom_id,
+                event_type="chat_message",
+                details=f"message={msg.id}",
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    return JSONResponse(out)
+
+
+@app.post('/api/classrooms/{classroom_id}/chat/seen')
+def classroom_chat_seen(classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Mark classroom chat as seen for the current user.
+
+    This is used for per-user last-seen tracking and analytics.
+    """
+    with Session(engine) as session:
+        classroom = session.get(Classroom, classroom_id)
+        if not classroom:
+            raise HTTPException(status_code=404, detail="Classroom not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this classroom")
+
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                classroom_id=classroom_id,
+                event_type="chat_seen",
+                details=None,
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    return JSONResponse({"ok": True})
 
 
 @app.get('/api/resolve-username')
@@ -6025,6 +7279,15 @@ def admin_webhooks(request: Request, current_user: User = Depends(get_current_us
 
 @app.get("/search", response_class=HTMLResponse)
 def search(request: Request, q: str = "", category: Optional[str] = Query(None)):
+    # Require sign-in to search and browse categories
+    current_user = get_current_user_optional(request)
+    if not current_user:
+        next_url = str(request.url.path)
+        if q or category:
+            # preserve query parameters in next when searching from header/category chips
+            next_url = str(request.url)
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=status.HTTP_303_SEE_OTHER)
+ 
     with Session(engine) as session:
         # Base statement: search title/description by query and eager-load owner
         statement = (
@@ -6077,6 +7340,19 @@ def search(request: Request, q: str = "", category: Optional[str] = Query(None))
             bc = {}
         for r in results:
             setattr(r, 'bookmarks_count', bc.get(getattr(r, 'id', None), 0))
+
+        # attach like counts for results (batch)
+        if res_ids:
+            rows_likes = session.exec(
+                select(Like.presentation_id, func.count(Like.id))
+                .where(Like.presentation_id.in_(list(res_ids)))
+                .group_by(Like.presentation_id)
+            ).all()
+            lc = {int(r[0]): int(r[1]) for r in rows_likes}
+        else:
+            lc = {}
+        for r in results:
+            setattr(r, 'likes_count', lc.get(getattr(r, 'id', None), 0))
 
         # attach owner's presentation counts for search results
         res_owner_ids = {r.owner_id for r in results if getattr(r, 'owner_id', None) is not None}

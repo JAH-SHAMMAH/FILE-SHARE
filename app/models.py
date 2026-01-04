@@ -60,6 +60,9 @@ class Presentation(SQLModel, table=True):
     category_id: Optional[int] = Field(default=None, foreign_key="category.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     views: int = 0
+    # simple visibility + download controls
+    privacy: str = Field(default="public")  # public|private
+    allow_download: bool = Field(default=True)
 
     owner: Optional[User] = Relationship(back_populates="presentations")
     category: Optional[Category] = Relationship(back_populates="presentations")
@@ -269,6 +272,14 @@ class StudentAnalytics(SQLModel, table=True):
     classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
     event_type: str = Field(default="event")  # upload|submission|view|grade|attendance|quiz_result
     details: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ClassroomMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    classroom_id: int = Field(foreign_key="classroom.id")
+    sender_id: int = Field(foreign_key="user.id")
+    content: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

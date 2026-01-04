@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Contact · 247FileShare{% endblock %}
+{% block content %}
+<section class="fs-section">
+  <div class="panel-head">
+    <h1 class="section-title section-title--xl">Contact 247FileShare</h1>
+    <p class="muted">Questions, ideas, or issues? Send us a note and it will go straight to the 247FileShare team.</p>
+  </div>
+
+  {% if success %}
+    <div class="content-card" style="max-width:720px;margin-bottom:16px;border-left:4px solid #16a34a;">
+      <p class="muted" style="margin:0;font-weight:600;">{{ success }}</p>
+    </div>
+  {% endif %}
+
+  <div class="content-card" style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;max-width:960px;align-items:flex-start;">
+    <form method="post" action="/contact" style="display:flex;flex-direction:column;gap:12px;">
+      <label class="field">Name
+        <input name="name" required />
+      </label>
+      <label class="field">Email
+        <input name="email" type="email" required />
+      </label>
+      <label class="field">Message
+        <textarea name="message" rows="6" required placeholder="Tell us how you're using 247FileShare or what you need help with."></textarea>
+      </label>
+      <div class="auth-actions">
+        <button class="btn" type="submit">Send message</button>
+      </div>
+    </form>
+
+    <aside class="section" style="background:rgba(17,24,39,0.96);color:#f9fafb;border-radius:18px;box-shadow:0 18px 40px rgba(15,23,42,0.55);padding:18px 18px 16px;">
+      <h3 style="margin-top:0;margin-bottom:8px;font-size:18px;">How we use your message</h3>
+      <p style="font-size:14px;line-height:1.7;opacity:0.95;">
+        Every contact form submission is sent directly to the creator of 247FileShare. We read your feedback to
+        improve the product, fix problems, and decide what to build next.
+      </p>
+      <p style="font-size:14px;line-height:1.7;opacity:0.95;">
+        Please avoid sharing passwords or sensitive personal data. If you&apos;re reporting a bug, include as much
+        detail as you can (what you clicked, what you expected, and what actually happened).
+      </p>
+    </aside>
+  </div>
+</section>
+{% endblock %}

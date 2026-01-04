@@ -18,18 +18,36 @@
         </a>
       </div>
       <h1>{{ p.title }}</h1>
+      {% if current_user and current_user.id == p.owner_id and (p.privacy or 'public') == 'private' %}
+        <div class="muted" style="margin-top:4px;font-size:12px;font-weight:600;color:#b91c1c;">
+          This presentation is <strong>private</strong> · only you can see it.
+        </div>
+      {% endif %}
       <p class="muted presentation-short-desc" style="margin-top:8px;">{{ p.description or '' }}</p>
-      <p class="muted" style="margin-top:6px;"><strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations · <strong id="view-count">{{ p.views or 0 }}</strong> views</p>
+      <p class="muted" style="margin-top:6px;">
+        <strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations ·
+        <strong id="view-count">{{ p.views or 0 }}</strong> views ·
+        <strong>{{ likes or 0 }}</strong> likes
+      </p>
     </div>
     <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if original_url %}
-          <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
+          {% if current_user and current_user.id == p.owner_id %}
+            <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
+          {% elif p.allow_download %}
+            <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
+          {% endif %}
         {% endif %}
         {% if p.owner_id %}
           <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username }}" data-email="{{ p.owner_email }}" data-bypass="1">Contact Owner</button>
           {% if current_user and current_user.username != p.owner_username %}
             <button class="btn btn--ghost follow-btn" data-username="{{ p.owner_username }}">{% if is_following %}Unfollow{% else %}Follow{% endif %}</button>
+          {% endif %}
+          {% if current_user and current_user.id == p.owner_id %}
+          <form id="presentation-delete-form" method="post" action="/presentations/{{ p.id }}/delete" style="display:inline">
+            <button id="presentation-delete-trigger" class="btn btn--ghost" type="button">Delete</button>
+          </form>
           {% endif %}
         {% endif %}
       </div>
@@ -94,6 +112,7 @@
         <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Mind Map</button>
       {% endif %}
     </div>
+<<<<<<< HEAD
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if current_user and current_user.id == p.owner_id %}
         <button id="delete-presentation-btn" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">
@@ -104,6 +123,9 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
       </button>
     </div>
+=======
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;"></div>
+>>>>>>> 0b92d6c (Commit local UI and model changes)
   </div>
 
   <!-- Two-column viewer: thumbnails left, large viewer right -->
@@ -214,6 +236,7 @@
     </form>
   </section>
 </div>
+<<<<<<< HEAD
 
   <!-- Delete confirmation modal (owner only) -->
   {% if current_user and current_user.id == p.owner_id %}
@@ -229,6 +252,32 @@
     </div>
   </div>
   {% endif %}
+=======
+ 
+<!-- Post-upload share modal -->
+<div id="upload-share-modal" class="chat-modal" style="display:none;">
+  <div class="chat-modal__backdrop"></div>
+  <div class="chat-modal__panel" style="max-width:460px;width:100%;">
+    <header class="chat-header">
+      <div class="chat-header__title" style="font-size:22px;font-weight:800;letter-spacing:0.02em;">
+        🎉 IT'S LIVE
+      </div>
+      <button type="button" class="icon-btn" data-close-share>✕</button>
+    </header>
+    <div style="padding:18px 18px 16px;">
+      <p class="muted" style="margin-top:0;margin-bottom:14px;font-size:15px;">
+        Let the world see it. Share your story and inspire someone today.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        <a href="#" target="_blank" rel="noopener" class="btn" data-share="facebook">Share on Facebook</a>
+        <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="x">Share on X</a>
+        <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="linkedin">Share on LinkedIn</a>
+      </div>
+      <button type="button" class="btn btn--ghost" data-copy-link>Copy link</button>
+    </div>
+  </div>
+</div>
+>>>>>>> 0b92d6c (Commit local UI and model changes)
 {% endblock %}
 
 {% block scripts %}
@@ -289,6 +338,114 @@ const presentationFilename = "{{ p.filename or '' }}";
   }
 })();
 
+// Delete confirmation modal for presentation delete
+(function(){
+  const trigger = document.getElementById('presentation-delete-trigger');
+  const form = document.getElementById('presentation-delete-form');
+  if (!trigger || !form) return;
+
+  let modal = document.getElementById('presentation-delete-modal');
+  if (!modal){
+    modal = document.createElement('div');
+    modal.id = 'presentation-delete-modal';
+    modal.className = 'chat-modal';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="chat-modal__backdrop"></div>
+      <div class="chat-modal__panel" style="max-width:420px;">
+        <header class="chat-header">
+          <div class="chat-header__title">Delete presentation</div>
+          <button type="button" id="presentation-delete-cancel" class="icon-btn">✕</button>
+        </header>
+        <div style="padding:16px;">
+          <p class="muted">This action will permanently delete this presentation and its data. This cannot be undone.</p>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+            <button type="button" id="presentation-delete-cancel-2" class="btn btn--ghost">Cancel</button>
+            <button type="button" id="presentation-delete-confirm" class="btn btn--danger">Delete permanently</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  function openModal(){ modal.style.display = 'flex'; }
+  function closeModal(){ modal.style.display = 'none'; }
+
+  trigger.addEventListener('click', function(e){ e.preventDefault(); openModal(); });
+
+  modal.addEventListener('click', function(e){
+    if (e.target.classList.contains('chat-modal__backdrop')) closeModal();
+  });
+
+  modal.querySelector('#presentation-delete-cancel')?.addEventListener('click', function(){ closeModal(); });
+  modal.querySelector('#presentation-delete-cancel-2')?.addEventListener('click', function(){ closeModal(); });
+  modal.querySelector('#presentation-delete-confirm')?.addEventListener('click', function(){ form.submit(); });
+})();
+
+// Post-upload share popup: show once when just_uploaded=1 is present in the URL
+(function(){
+  const params = new URLSearchParams(window.location.search || '');
+  if (!params.get('just_uploaded')) return;
+
+  const modal = document.getElementById('upload-share-modal');
+  if (!modal) return;
+
+  const backdrop = modal.querySelector('.chat-modal__backdrop');
+  const closeButtons = modal.querySelectorAll('[data-close-share]');
+  const fb = modal.querySelector('[data-share="facebook"]');
+  const x = modal.querySelector('[data-share="x"]');
+  const li = modal.querySelector('[data-share="linkedin"]');
+  const copyBtn = modal.querySelector('[data-copy-link]');
+
+  const baseUrl = window.location.origin + window.location.pathname;
+
+  if (fb){
+    fb.href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(baseUrl);
+  }
+  if (x){
+    const text = 'Check out my new presentation on 247FileShare';
+    x.href = 'https://twitter.com/intent/tweet?url=' + encodeURIComponent(baseUrl) + '&text=' + encodeURIComponent(text);
+  }
+  if (li){
+    li.href = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(baseUrl);
+  }
+
+  function closeShare(){ modal.style.display = 'none'; }
+  function openShare(){ modal.style.display = 'flex'; }
+
+  closeButtons.forEach(function(btn){
+    btn.addEventListener('click', function(){ closeShare(); });
+  });
+  if (backdrop){
+    backdrop.addEventListener('click', function(ev){
+      if (ev.target === backdrop) closeShare();
+    });
+  }
+
+  if (copyBtn && navigator.clipboard && navigator.clipboard.writeText){
+    copyBtn.addEventListener('click', async function(){
+      try{
+        await navigator.clipboard.writeText(baseUrl);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = 'Link copied';
+        setTimeout(function(){ copyBtn.textContent = original; }, 2000);
+      }catch(e){
+        alert('Could not copy link');
+      }
+    });
+  }
+
+  // Clean the query string so refreshes don't re-open the modal
+  try{
+    params.delete('just_uploaded');
+    const newQs = params.toString();
+    const newUrl = window.location.pathname + (newQs ? '?' + newQs : '') + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }catch(e){ /* ignore */ }
+
+  openShare();
+})();
+
 // Shared AI poller helper used by summary/quiz/flashcards/mindmap
 function makePoller(taskType, contentEl, statusEl){
   return async function pollResult(){
@@ -323,8 +480,8 @@ function makePoller(taskType, contentEl, statusEl){
   const pageIndicator = document.getElementById('page-indicator');
   const prevBtn = document.getElementById('prev-page');
   const nextBtn = document.getElementById('next-page');
-  const viewerDownload = document.getElementById('viewer-download');
-  const viewerOpen = document.getElementById('viewer-open-original');
+  // older markup used dedicated download/open buttons; we now fall back
+  // to the main Download button in the header when needed.
   const zoomInBtn = document.getElementById('zoom-in');
   const zoomOutBtn = document.getElementById('zoom-out');
 
@@ -347,6 +504,7 @@ function makePoller(taskType, contentEl, statusEl){
   let currentIndex = 0;
   let zoom = 1;
   let currentImg = null;
+  let autoConvertTried = false;
 
   function setIndicator() {
     pageIndicator.textContent = (thumbnails.length ? (currentIndex+1) : '—') + ' / ' + (thumbnails.length || '—');
@@ -365,23 +523,77 @@ function makePoller(taskType, contentEl, statusEl){
     }
   }
 
+  async function autoConvertAndLoad(){
+    if (placeholder) {
+      placeholder.textContent = 'Generating previews…';
+      placeholder.style.display = '';
+    }
+    try{
+      const r = await fetch(`/api/presentations/${presentationId}/convert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!r.ok){
+        renderFallback();
+        return;
+      }
+      const start = Date.now();
+      const timeoutMs = 60000;
+      while (Date.now() - start < timeoutMs){
+        try{
+          const t = await fetch(`/presentations/${presentationId}/thumbnails`, { credentials: 'include' });
+          if (t.ok){
+            const tj = await t.json();
+            if (tj.thumbnails && tj.thumbnails.length){
+              thumbnails = tj.thumbnails;
+              renderThumbs();
+              await showPage(0);
+              if (placeholder) placeholder.style.display = 'none';
+              return;
+            }
+          }
+        }catch(e){}
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      renderFallback();
+    }catch(e){
+      console.warn('auto convert failed', e);
+      renderFallback();
+    }
+  }
+
   async function fetchThumbnails(){
     try{
       const res = await fetch(`/presentations/${presentationId}/thumbnails`);
       if (!res.ok) throw new Error('no thumbs');
       const data = await res.json();
       thumbnails = data.thumbnails || [];
+<<<<<<< HEAD
       if (thumbnails.length) {
         renderThumbs();
         showPage(0);
       } else if (data.status === 'queued') {
         await pollThumbnails();
+=======
+      if (thumbnails.length){
+        renderThumbs();
+        await showPage(0);
+      } else if (!autoConvertTried){
+        autoConvertTried = true;
+        await autoConvertAndLoad();
+>>>>>>> 0b92d6c (Commit local UI and model changes)
       } else {
         renderFallback();
       }
     }catch(e){
       console.warn('thumbnails fetch failed', e);
-      renderFallback();
+      if (!autoConvertTried){
+        autoConvertTried = true;
+        await autoConvertAndLoad();
+      } else {
+        renderFallback();
+      }
     }
   }
 
@@ -413,12 +625,29 @@ function makePoller(taskType, contentEl, statusEl){
   function renderFallback(){
     thumbsEl.innerHTML = '';
     mainEl.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.alignItems = 'center';
+    wrap.style.justifyContent = 'center';
+    wrap.style.minHeight = '240px';
+
+    const msg = document.createElement('div');
+    msg.className = 'muted';
+    msg.style.marginBottom = '8px';
+    msg.textContent = 'No slide previews yet. Use "Generate Previews" above, or open the original file.';
+    wrap.appendChild(msg);
+
     const link = document.createElement('a');
     link.className = 'btn';
-    link.href = viewerDownload.href || '#';
-    link.textContent = 'Download / Open original';
+    // try reuse the existing header download button if present
+    const headerDownload = document.querySelector('.btn--download');
+    link.href = headerDownload && headerDownload.getAttribute('href') ? headerDownload.getAttribute('href') : '#';
+    link.textContent = headerDownload ? 'Download / Open original' : 'No file available';
     link.target = '_blank';
-    mainEl.appendChild(link);
+    wrap.appendChild(link);
+
+    mainEl.appendChild(wrap);
     pageIndicator.textContent = '— / —';
   }
 
@@ -544,14 +773,106 @@ function makePoller(taskType, contentEl, statusEl){
   }
 
   if(fbtn){
-    const poll = makePoller('flashcards', fcontent, fstatus);
+    async function renderFlashcards(raw){
+      fcontent.innerHTML = '';
+      const text = (raw || '').trim();
+      if (!text){
+        fcontent.textContent = 'No flashcards available.';
+        return;
+      }
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (!lines.length){
+        fcontent.textContent = text;
+        return;
+      }
+
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexWrap = 'wrap';
+      wrap.style.gap = '8px';
+
+      lines.forEach(line => {
+        let front = line;
+        let back = '';
+        const idx = line.indexOf(':');
+        if (idx !== -1){
+          front = line.slice(0, idx).trim();
+          back = line.slice(idx + 1).trim();
+        }
+
+        const card = document.createElement('div');
+        card.className = 'flashcard';
+        card.style.border = '1px solid var(--border, #e5e7eb)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px 12px';
+        card.style.minWidth = '180px';
+        card.style.maxWidth = '260px';
+        card.style.cursor = back ? 'pointer' : 'default';
+        card.style.background = 'var(--card-bg, #ffffff)';
+
+        const frontEl = document.createElement('div');
+        frontEl.style.fontWeight = '600';
+        frontEl.style.marginBottom = back ? '6px' : '0';
+        frontEl.textContent = front || line;
+
+        const backEl = document.createElement('div');
+        backEl.textContent = back;
+        backEl.style.fontSize = '13px';
+        backEl.style.display = back ? 'none' : 'block';
+        backEl.style.color = 'var(--muted, #4b5563)';
+
+        if (back){
+          const hint = document.createElement('div');
+          hint.textContent = 'Tap to reveal answer';
+          hint.className = 'muted';
+          hint.style.fontSize = '11px';
+          hint.style.marginTop = '4px';
+          card.appendChild(hint);
+
+          card.addEventListener('click', () => {
+            const isHidden = backEl.style.display === 'none';
+            backEl.style.display = isHidden ? 'block' : 'none';
+            hint.textContent = isHidden ? 'Tap to hide answer' : 'Tap to reveal answer';
+          });
+        }
+
+        card.insertBefore(frontEl, card.firstChild);
+        card.appendChild(backEl);
+        wrap.appendChild(card);
+      });
+
+      fcontent.appendChild(wrap);
+    }
+
+    async function pollFlashcards(){
+      fstatus.textContent = 'Waiting for flashcards…';
+      const start = Date.now();
+      while (Date.now() - start < 120000){
+        try{
+          const r = await fetch(`/api/presentations/${presentationId}/ai/results`, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+          if (r.ok){
+            const j = await r.json();
+            const res = j.results && j.results.find(x => x.task_type === 'flashcards' && x.result);
+            if (res){
+              await renderFlashcards(res.result);
+              fstatus.textContent = '';
+              return true;
+            }
+          }
+        }catch(e){ }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      fstatus.textContent = 'Timed out waiting for flashcards.';
+      return false;
+    }
+
     fbtn.addEventListener('click', async ()=>{
       fbtn.disabled = true; fbtn.textContent = 'Queued…'; fcont.style.display = '';
       fcontent.textContent = ''; fstatus.textContent = 'Requesting flashcards…';
       try{
         const r = await fetch(`/api/presentations/${presentationId}/ai/flashcards`, { method: 'POST', credentials: 'include' });
         if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; fstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
-        await poll();
+        await pollFlashcards();
       }catch(e){ fstatus.textContent = 'Failed to request flashcards.' }
       fbtn.disabled = false; fbtn.textContent = 'Flashcards';
     });
@@ -585,10 +906,17 @@ function makePoller(taskType, contentEl, statusEl){
       if(j.thumbnails && j.thumbnails.length){
         j.thumbnails.forEach(u=>{ out.push(`<img src="${u}" alt="thumb" style="max-width:160px;margin-right:6px;margin-bottom:6px;"/>`); });
       }
+<<<<<<< HEAD
       // check converted PDF (GET is fine and avoids HEAD 405 issues)
       const rp = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { credentials: 'include' });
       if(rp && rp.ok){
         out.push(`<div><a href="/presentations/${presentationId}/converted_pdf">Download converted PDF</a></div>`);
+=======
+      // check converted PDF
+      const rp = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { method: 'HEAD', credentials: 'include' });
+      if(rp && rp.status === 200){
+        out.push(`<div><a href="/presentations/${presentationId}/converted_pdf?inline=1" target="_blank" rel="noopener">Open converted PDF</a></div>`);
+>>>>>>> 0b92d6c (Commit local UI and model changes)
       }
       if(out.length) listEl.innerHTML = out.join(''); else listEl.textContent = 'Preview will be ready after conversion.';
     }catch(e){ listEl.textContent = 'Failed to load previews'; }

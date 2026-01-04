@@ -15,7 +15,15 @@
     </div>
     <div>
       <div style="display:flex;align-items:center;gap:12px">
-        <h2 style="margin:0">{{ user_obj.full_name or user_obj.username }}</h2>
+        <h2 style="margin:0">
+          {{ user_obj.full_name or user_obj.username }}
+          {% if user_obj.site_role %}
+            {% set role = user_obj.site_role %}
+            <span class="role-badge{% if role == 'teacher' %} role-badge--teacher{% elif role == 'student' %} role-badge--student{% elif role == 'individual' %} role-badge--individual{% elif role == 'passerby' %} role-badge--passerby{% endif %}" title="{{ role|capitalize }}">
+              ★
+            </span>
+          {% endif %}
+        </h2>
         {% if current_user and current_user.username != user_obj.username %}
             <button class="btn follow-btn" data-username="{{ user_obj.username }}">{% if is_following %}Unfollow{% else %}Follow{% endif %}</button>
         {% endif %}
@@ -74,20 +82,10 @@
         </a>
         <div class="card__body">
           <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
-          <div class="card__meta">Views: {{ p.views }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
+          <div class="card__meta">Views: {{ p.views }} • Likes: {{ p.likes_count or 0 }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
           <p class="card__desc">{{ p.description or "-" }}</p>
           <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-            {% set cu = current_user if current_user else None %}
-            {% if user_obj.id %}
-              <button class="btn btn--small btn-contact" data-user-id="{{ user_obj.id }}" data-username="{{ user_obj.username }}" data-email="{{ user_obj.email }}">Contact Owner</button>
-              <button class="btn btn--small btn-message" data-user-id="{{ user_obj.id }}" data-username="{{ user_obj.username }}">Message</button>
-            {% elif user_obj.email %}
-              <button class="btn btn--small btn-contact" data-user-id="" data-username="" data-email="{{ user_obj.email }}">Contact Owner</button>
-            {% endif %}
             <button class="btn btn--small btn-share" data-title="{{ p.title }}" data-id="{{ p.id }}" data-filename="{{ p.filename }}">Share</button>
-            {% if p.filename %}
-              <a class="btn btn--small" href="/download/{{ p.filename }}">Download</a>
-            {% endif %}
           </div>
         </div>
       </article>

@@ -133,6 +133,80 @@ document.addEventListener('DOMContentLoaded', function(){
     if (myIdEl) myId = parseInt(myIdEl.getAttribute('data-my-id'));
     const isMe = myId ? (m.from === myId) : (m.from !== otherId);
     el.className = 'chat-msg ' + (isMe ? 'me' : 'other');
+
+    // header with avatar, name, and role badge
+    const header = document.createElement('div');
+    header.className = 'chat-msg__header';
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '6px';
+    header.style.marginBottom = '4px';
+
+    const avatarWrap = document.createElement('div');
+    avatarWrap.className = 'contact-avatar';
+    avatarWrap.style.width = '28px';
+    avatarWrap.style.height = '28px';
+    avatarWrap.style.fontSize = '13px';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.style.display = 'flex';
+    nameWrap.style.alignItems = 'center';
+    nameWrap.style.gap = '4px';
+
+    // derive a display name and initials from payload
+    const rawName = m.full_name || m.username || (isMe ? 'You' : (otherUsername || 'User'));
+    const initials = (rawName || 'U').trim().slice(0, 2).toUpperCase() || 'U';
+
+    // normalize role once so avatar + badge can share colors
+    const role = (m.site_role || '').toString().toLowerCase();
+
+    if (m.avatar){
+      const img = document.createElement('img');
+      img.src = '/download/' + m.avatar + '?inline=1';
+      img.alt = rawName;
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.borderRadius = '999px';
+      img.onerror = function(){
+        this.style.display = 'none';
+        avatarWrap.textContent = initials;
+        if (role === 'teacher') avatarWrap.style.color = '#1d4ed8';
+        else if (role === 'student') avatarWrap.style.color = '#f59e0b';
+        else if (role === 'individual') avatarWrap.style.color = '#dc2626';
+        else if (role === 'passerby') avatarWrap.style.color = '#111827';
+      };
+      avatarWrap.appendChild(img);
+    } else {
+      // No uploaded avatar: use initials, and tint text to match role badge
+      avatarWrap.textContent = initials;
+      if (role === 'teacher') avatarWrap.style.color = '#1d4ed8';
+      else if (role === 'student') avatarWrap.style.color = '#f59e0b';
+      else if (role === 'individual') avatarWrap.style.color = '#dc2626';
+      else if (role === 'passerby') avatarWrap.style.color = '#111827';
+    }
+
+    const nameLabel = document.createElement('span');
+    nameLabel.textContent = rawName;
+    nameLabel.style.fontWeight = '600';
+    nameLabel.style.fontSize = '13px';
+    nameWrap.appendChild(nameLabel);
+
+    // role badge (teacher, student, individual, passerby)
+    if (m.site_role){
+      const badge = document.createElement('span');
+      badge.className = 'role-badge';
+      if (role === 'teacher') badge.className += ' role-badge--teacher';
+      else if (role === 'student') badge.className += ' role-badge--student';
+      else if (role === 'individual') badge.className += ' role-badge--individual';
+      else if (role === 'passerby') badge.className += ' role-badge--passerby';
+      badge.textContent = '★';
+      badge.title = role.charAt(0).toUpperCase() + role.slice(1);
+      nameWrap.appendChild(badge);
+    }
+
+    header.appendChild(avatarWrap);
+    header.appendChild(nameWrap);
+
     const text = document.createElement('div');
     text.className = 'chat-msg__text';
     text.textContent = m.content;
@@ -166,6 +240,7 @@ document.addEventListener('DOMContentLoaded', function(){
     const meta = document.createElement('div');
     meta.className = 'chat-msg__meta';
     meta.textContent = new Date(m.created_at).toLocaleString();
+    el.appendChild(header);
     el.appendChild(text);
     el.appendChild(meta);
     container.appendChild(el);
@@ -187,7 +262,19 @@ document.addEventListener('DOMContentLoaded', function(){
       let data;
       try{ data = JSON.parse(ev.data); }catch(e){ return; }
       if (data.type === 'message'){
-        appendMessage({ id: data.id, from: data.from, to: data.to, content: data.content, file: data.file, thumbnail: data.thumbnail, created_at: data.created_at });
+        appendMessage({
+          id: data.id,
+          from: data.from,
+          to: data.to,
+          content: data.content,
+          file: data.file,
+          thumbnail: data.thumbnail,
+          created_at: data.created_at,
+          full_name: data.full_name,
+          username: data.username,
+          avatar: data.avatar,
+          site_role: data.site_role
+        });
         // if the message is for otherId and from otherId, mark badge cleared
         if (data.to && data.to === parseInt(qs('[data-my-id]')?.getAttribute('data-my-id'))) {
           // do nothing

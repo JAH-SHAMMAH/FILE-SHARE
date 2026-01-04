@@ -24,7 +24,8 @@ body {
   margin: 0;
   background-color: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1.6;
 }
 .role-teacher body,
 body.role-teacher {
@@ -102,6 +103,42 @@ body.role-teacher {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #1d4ed8;
+}
+
+/* Small role badges (teacher / student / individual / passerby) */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  margin-left: 4px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.role-badge--teacher {
+  color: #1d4ed8; /* blue star */
+  border-color: rgba(37,99,235,0.35);
+  background: rgba(37,99,235,0.08);
+}
+.role-badge--student {
+  color: #f59e0b; /* gold star */
+  border-color: rgba(245,158,11,0.4);
+  background: rgba(245,158,11,0.10);
+}
+.role-badge--individual {
+  color: #dc2626; /* red star */
+  border-color: rgba(220,38,38,0.4);
+  background: rgba(220,38,38,0.10);
+}
+.role-badge--passerby {
+  color: #111827; /* black/near-black star */
+  border-color: rgba(17,24,39,0.45);
+  background: rgba(17,24,39,0.06);
 }
 
 /* Teacher-specific chat tweaks */
@@ -780,7 +817,8 @@ body.role-teacher {
 .section { background: rgba(14,165,233,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.3); }
 .section + .section { margin-top: 8px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 10px; }
-.section-title { margin: 0; font-size: 16px; }
+.section-title { margin: 0; font-size: 24px; }
+.section-title--xl { font-size: 32px; }
 .section-note { color: var(--muted); font-size: 13px; }
 .dropzone { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 2px dashed var(--border); border-radius: 14px; padding: 16px; background: rgba(14,165,233,0.04); position: relative; overflow: hidden; }
 .dropzone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -962,6 +1000,7 @@ body.role-teacher {
 .featured-card .card__thumb { height: 160px; padding: 8px; }
 .featured-card .card__thumb img { border-radius: 12px; }
 .featured-card .card__body { padding: 12px 14px; }
+.featured-card .card__actions { justify-content: center; }
 .featured-nav { position: absolute; top: 50%; transform: translateY(-50%); display: flex; gap:8px; z-index: 60; pointer-events: none; }
 .featured-nav button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.06); background: rgba(255,255,255,0.98); box-shadow: 0 10px 26px rgba(16,24,40,0.12); cursor: pointer; display: inline-flex; align-items:center; justify-content:center; font-weight:700; pointer-events: auto; }
 .featured-nav .prev { left: -30px; }
@@ -1188,7 +1227,7 @@ body.auth-body {
 .upload-hero--lite { text-align: center; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 18px rgba(16,24,40,0.08); border-radius: 16px; padding: 18px 16px; }
 .upload-title { margin: 0 0 6px 0; font-size: 24px; letter-spacing: 0.2px; }
 
-.upload-shell--slim { max-width: 1180px; margin: 0 auto; padding: 0 12px 24px; }
+.upload-shell--slim { max-width: 1180px; margin: 24px auto 0; padding: 0 12px 24px; }
 .upload-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
 .preview-stack { display: flex; flex-direction: column; gap: 10px; }
 .preview-frame-box--tight { min-height: 230px; }

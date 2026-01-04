@@ -96,17 +96,7 @@
           {% endif %}
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">View</a>
-          <a class="btn" href="{{ url_for('download_file', filename=p.filename) }}">Download</a>
-          {% if p.owner_id %}
-            <button class="btn btn--ghost btn-contact" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}" data-email="{{ p.owner_email if p.owner_email is defined else '' }}">Contact Owner</button>
-            <button class="btn btn--ghost btn-message" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username if p.owner_username is defined else '' }}">Message</button>
-            {% if current_user and current_user.id != p.owner_id %}
-            <form class="follow-form" data-owner-id="{{ p.owner_id }}" method="post" action="/users/{{ p.owner_id }}/follow" style="display:inline">
-              <button class="btn btn--ghost btn-follow">Subscribe</button>
-            </form>
-            {% endif %}
-          {% endif %}
+          <a class="btn btn--ghost" href="{{ url_for('view_presentation', presentation_id=p.id) }}">Open</a>
         </div>
       </div>
     </div>
@@ -202,32 +192,33 @@
         </label>
       </div>
 
-      <div class="meta-grid meta-grid--compact">
-        <label class="field">Privacy
-          <select name="privacy">
-            <option value="public">Public</option>
-            <option value="private">Private</option>
-          </select>
-        </label>
-        <label class="field">License
-          <select name="license">
-            <option value="all_rights_reserved">All Rights Reserved</option>
-            <option value="cc_by">CC BY</option>
-            <option value="cc_by_sa">CC BY-SA</option>
-          </select>
-        </label>
-      </div>
+      <details class="section" style="margin-top:8px;">
+        <summary style="cursor:pointer;font-weight:600;">Advanced settings</summary>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+          <div class="meta-grid meta-grid--compact">
+            <label class="field">Privacy
+              <select name="privacy">
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+            </label>
+            <label class="field">License
+              <select name="license">
+                <option value="all_rights_reserved">All Rights Reserved</option>
+                <option value="cc_by">CC BY</option>
+                <option value="cc_by_sa">CC BY-SA</option>
+              </select>
+            </label>
+          </div>
 
-      <div class="toggle-row">
-        <label class="toggle">
-          <input type="checkbox" name="allow_download" value="1" checked />
-          <span>Allow people to download this document</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" name="allow_embed" value="1" checked />
-          <span>Allow people to embed this document</span>
-        </label>
-      </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" name="allow_download" value="1" checked />
+              <span>Allow people to download this document</span>
+            </label>
+          </div>
+        </div>
+      </details>
 
       <div class="auth-actions" style="justify-content:flex-end; gap:10px; margin-top:10px;">
         <a class="btn btn--ghost" href="/">Cancel</a>
@@ -240,8 +231,6 @@
 <script>
   // Small UI helpers for upload page
   (function(){
-    const ham = document.getElementById('hamburger');
-    if (ham) ham.addEventListener('click', ()=>{ alert('Menu:\n- Profile\n- Settings\n- Sign out'); });
     const params = new URLSearchParams(location.search);
     const scope = params.get('scope') || 'mine';
     const label = document.getElementById('uploads-scope-label');

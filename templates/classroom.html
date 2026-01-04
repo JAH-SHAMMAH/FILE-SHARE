@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {% extends 'base.html' %}
 
 {% block title %}{{ classroom.name }} — Classroom{% endblock %}
@@ -89,9 +90,142 @@
 
 {% block scripts %}
   {{ super() }}
+=======
+{% extends "base.html" %}
+{% block title %}{{ classroom.name }} — Classroom{% endblock %}
+
+{% block content %}
+  <div class="content-card" id="classroom-shell" data-classroom-id="{{ classroom.id }}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+      <div>
+        <h1 style="margin:0;">{{ classroom.name }}</h1>
+        <p class="muted" style="margin:4px 0 0 0;font-size:13px;">Group chat for this classroom.</p>
+      </div>
+      <button id="classroom-menu-toggle" class="hamburger" type="button" aria-label="Open classroom menu">☰</button>
+    </div>
+
+    <!-- Simple dropdown menu for classroom tools -->
+    <div id="classroom-menu" class="hamburger-menu" style="display:none; right:0;">
+      <div class="hamburger-menu__inner">
+        <h4>Classroom tools</h4>
+        <ul>
+          <li><button type="button" class="hamburger-menu-link" data-modal="upload">Upload material</button></li>
+          <li><button type="button" class="hamburger-menu-link" data-modal="library">Class library</button></li>
+          <li><button type="button" class="hamburger-menu-link" data-modal="assignments">Assignments</button></li>
+          <li><button type="button" class="hamburger-menu-link" data-modal="attendance">Mark attendance</button></li>
+          <li><button type="button" class="hamburger-menu-link" data-modal="performance">Class performance</button></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Chat is the primary view -->
+    <section id="class-chat" style="margin-top:8px;">
+      <h2 style="margin:0 0 4px 0;">Class chat</h2>
+      <p class="muted" style="margin-top:4px;font-size:13px;">Everyone in this classroom can see and send messages here.</p>
+      <div id="class-chat-messages" class="chat-messages" style="max-height:260px;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--surface);"></div>
+      <form id="class-chat-form" class="chat-form" style="margin-top:8px;display:flex;gap:8px;">
+        <input id="class-chat-input" type="text" placeholder="Write a message to the class…" autocomplete="off" style="flex:1;" />
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </section>
+
+    <!-- Hidden templates for classroom tools (shown inside modal) -->
+    <div id="classroom-upload-template" style="display:none;">
+      {% if member and member.role in ['teacher','admin'] %}
+      <section>
+        <h3>Upload material</h3>
+        <form id="classroom-upload-form" action="/api/classrooms/{{ classroom.id }}/library" method="post" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="">
+          <label>Title (optional)<br><input name="title"></label><br>
+          <label>File<br><input type="file" name="file" required></label><br>
+          <button type="submit" class="btn">Upload</button>
+        </form>
+      </section>
+      {% else %}
+      <p class="muted">Only teachers and admins can upload materials for this classroom.</p>
+      {% endif %}
+    </div>
+
+    <div id="classroom-library-template" style="display:none;">
+      <section>
+        <h3>Class library</h3>
+        <div id="library-list">
+          {% if items %}
+            <ul>
+            {% for it in items %}
+              <li>
+                <strong>{{ it.title or it.filename }}</strong>
+                &mdash; uploaded {{ it.created_at }}
+                {% if member %}
+                  &mdash; <a href="/classrooms/{{ classroom.id }}/library/download/{{ it.id }}">Download</a>
+                {% endif %}
+              </li>
+            {% endfor %}
+            </ul>
+          {% else %}
+            <p>No materials yet.</p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <div id="classroom-assignments-template" style="display:none;">
+      <section>
+        <h3>Assignments</h3>
+        {% if member and member.role in ['teacher','admin'] %}
+        <form action="/classrooms/{{ classroom.id }}/assignments" method="post">
+          <input type="hidden" name="csrf_token" value="">
+          <label>Title<br><input name="title" required></label><br>
+          <label>Description<br><textarea name="description"></textarea></label><br>
+          <label>Due (ISO date)<br><input name="due_date" placeholder="YYYY-MM-DDTHH:MM:SS"></label><br>
+          <button type="submit" class="btn">Create Assignment</button>
+        </form>
+        {% endif %}
+
+        {% if assignments %}
+          <ul>
+          {% for a in assignments %}
+            <li>
+              <strong>{{ a.title }}</strong>
+              {% if a.due_date %} &mdash; due {{ a.due_date }}{% endif %}
+              <div>{{ a.description }}</div>
+              {% if member %}
+                {% if member.role == 'student' %}
+                  <form action="/assignments/{{ a.id }}/submit" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="">
+                    <label>File<br><input type="file" name="file" required></label>
+                    <button type="submit" class="btn">Submit</button>
+                  </form>
+                {% else %}
+                  &mdash; <a href="/assignments/{{ a.id }}/submissions">View submissions</a>
+                {% endif %}
+              {% endif %}
+            </li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <p>No assignments yet.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <!-- Generic modal shell for classroom tools -->
+  <div id="classroom-modal-backdrop" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(15,23,42,0.6);">
+    <div id="classroom-modal-panel" class="content-card" style="max-width:640px;margin:40px auto;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+        <h3 id="classroom-modal-title" style="margin:0;font-size:18px;"></h3>
+        <button type="button" id="classroom-modal-close" class="hamburger" aria-label="Close">&#x2715;</button>
+      </div>
+      <div id="classroom-modal-body"></div>
+    </div>
+  </div>
+
+>>>>>>> 0b92d6c (Commit local UI and model changes)
   <script>
     // Hamburger menu for students
     (function(){
+<<<<<<< HEAD
       var btn = document.getElementById('student-hamburger');
       var menu = document.getElementById('student-menu');
       if(btn && menu){
@@ -137,6 +271,8 @@
       }
     })();
     (function(){
+=======
+>>>>>>> 0b92d6c (Commit local UI and model changes)
       function getCookie(name){
         const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
         return v ? v.pop() : '';
@@ -149,6 +285,7 @@
         }
       }
 
+<<<<<<< HEAD
       // Teacher tools hamburger toggle
       // (inline onclick on #teacher-menu-toggle handles panel toggle)
 
@@ -243,3 +380,226 @@
     }
   </style>
 {% endblock %}
+=======
+      const shell = document.getElementById('classroom-shell');
+      if(!shell) return;
+      const classroomId = shell.getAttribute('data-classroom-id');
+
+      // classroom hamburger menu + modal behaviour
+      const menuToggle = document.getElementById('classroom-menu-toggle');
+      const menu = document.getElementById('classroom-menu');
+      const modalBackdrop = document.getElementById('classroom-modal-backdrop');
+      const modalTitle = document.getElementById('classroom-modal-title');
+      const modalBody = document.getElementById('classroom-modal-body');
+      const modalClose = document.getElementById('classroom-modal-close');
+
+      function openClassroomModal(which){
+        if (!modalBackdrop || !modalBody || !modalTitle) return;
+        let title = '';
+        let srcId = null;
+        if (which === 'upload'){
+          title = 'Upload material';
+          srcId = 'classroom-upload-template';
+        } else if (which === 'library'){
+          title = 'Class library';
+          srcId = 'classroom-library-template';
+        } else if (which === 'assignments'){
+          title = 'Assignments';
+          srcId = 'classroom-assignments-template';
+        }
+
+        if (srcId){
+          const srcEl = document.getElementById(srcId);
+          modalBody.innerHTML = srcEl ? srcEl.innerHTML : '';
+        } else if (which === 'attendance'){
+          title = 'Mark attendance';
+          modalBody.innerHTML = '<p class="muted">Open the attendance sheet for this class.</p>' +
+            '<p><a class="btn" href="/classrooms/' + classroomId + '/attendance">Open attendance</a></p>';
+        } else if (which === 'performance'){
+          title = 'Class performance';
+          modalBody.innerHTML = '<p class="muted">View analytics and performance for this classroom.</p>' +
+            '<p><a class="btn" href="/classrooms/' + classroomId + '/performance">Open performance dashboard</a></p>';
+        }
+
+        modalTitle.textContent = title;
+        modalBackdrop.style.display = 'block';
+      }
+
+      if (menuToggle && menu){
+        menuToggle.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          const isOpen = menu.style.display === 'block';
+          menu.style.display = isOpen ? 'none' : 'block';
+        });
+        document.addEventListener('click', function(ev){
+          if (!menu.contains(ev.target) && ev.target !== menuToggle){
+            menu.style.display = 'none';
+          }
+        });
+
+        menu.querySelectorAll('.hamburger-menu-link').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            const which = this.getAttribute('data-modal');
+            menu.style.display = 'none';
+            openClassroomModal(which);
+          });
+        });
+      }
+
+      if (modalClose && modalBackdrop){
+        modalClose.addEventListener('click', function(){ modalBackdrop.style.display = 'none'; });
+        modalBackdrop.addEventListener('click', function(ev){
+          const panel = document.getElementById('classroom-modal-panel');
+          if (ev.target === modalBackdrop || (panel && !panel.contains(ev.target))){
+            modalBackdrop.style.display = 'none';
+          }
+        });
+      }
+
+      // handle classroom upload form via AJAX to keep user in the modal
+      if (modalBody){
+        modalBody.addEventListener('submit', async function(ev){
+          const formEl = ev.target;
+          if (!formEl || formEl.id !== 'classroom-upload-form') return;
+          ev.preventDefault();
+          try{
+            const fd = new FormData(formEl);
+            const res = await fetch(formEl.action, { method: 'POST', body: fd });
+            if (res.ok){
+              // simple UX: close modal after successful upload
+              modalBackdrop.style.display = 'none';
+            }
+          }catch(e){ /* ignore */ }
+        });
+      }
+      const msgBox = document.getElementById('class-chat-messages');
+      const form = document.getElementById('class-chat-form');
+      const input = document.getElementById('class-chat-input');
+      let hasMarkedSeen = false;
+
+      if(!classroomId || !msgBox || !form || !input) return;
+
+      async function markChatSeen(){
+        if (hasMarkedSeen) return;
+        hasMarkedSeen = true;
+        try{
+          await fetch(`/api/classrooms/${classroomId}/chat/seen`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        }catch(e){ /* ignore */ }
+      }
+
+      function renderMessages(list){
+        msgBox.innerHTML = '';
+        const meIdAttr = document.body.getAttribute('data-my-id') || document.getElementById('current-user')?.getAttribute('data-my-id');
+        const meId = meIdAttr ? parseInt(meIdAttr) : null;
+        list.forEach(m => {
+          const row = document.createElement('div');
+          row.className = 'chat-msg ' + (meId && m.sender_id === meId ? 'me' : 'other');
+          const inner = document.createElement('div');
+          inner.className = 'chat-msg__text';
+
+          const header = document.createElement('div');
+          header.style.display = 'flex';
+          header.style.alignItems = 'center';
+          header.style.gap = '6px';
+
+          const avatar = document.createElement('div');
+          avatar.className = 'contact-avatar';
+          if (m.avatar) {
+            const img = document.createElement('img');
+            img.src = '/download/' + encodeURIComponent(m.avatar) + '?inline=1';
+            img.alt = m.username || 'avatar';
+            img.style.width = '28px';
+            img.style.height = '28px';
+            img.style.borderRadius = '999px';
+            img.style.objectFit = 'cover';
+            avatar.textContent = '';
+            avatar.appendChild(img);
+          } else {
+            const initials = (m.username || 'U').trim().slice(0,2).toUpperCase();
+            avatar.textContent = initials || 'U';
+          }
+
+          const nameWrap = document.createElement('div');
+          nameWrap.style.display = 'flex';
+          nameWrap.style.alignItems = 'center';
+          nameWrap.style.gap = '4px';
+
+          const name = document.createElement('div');
+          name.textContent = m.username || ('User #' + m.sender_id);
+          name.style.fontWeight = '600';
+
+          nameWrap.appendChild(name);
+
+          if (m.site_role) {
+            const badge = document.createElement('span');
+            badge.className = 'role-badge';
+            if (m.site_role === 'teacher') badge.className += ' role-badge--teacher';
+            else if (m.site_role === 'student') badge.className += ' role-badge--student';
+            else if (m.site_role === 'individual') badge.className += ' role-badge--individual';
+            else if (m.site_role === 'passerby') badge.className += ' role-badge--passerby';
+            badge.textContent = '★';
+            badge.title = m.site_role.charAt(0).toUpperCase() + m.site_role.slice(1);
+            nameWrap.appendChild(badge);
+          }
+
+          header.appendChild(avatar);
+          header.appendChild(nameWrap);
+
+          const body = document.createElement('div');
+          body.textContent = m.content;
+          body.style.marginTop = '4px';
+
+          inner.appendChild(header);
+          inner.appendChild(body);
+
+          const meta = document.createElement('div');
+          meta.className = 'chat-msg__meta';
+          try {
+            meta.textContent = new Date(m.created_at).toLocaleString();
+          } catch(e) {
+            meta.textContent = m.created_at || '';
+          }
+
+          row.appendChild(inner);
+          row.appendChild(meta);
+
+          msgBox.appendChild(row);
+        });
+        msgBox.scrollTop = msgBox.scrollHeight;
+      }
+
+      async function loadChat(){
+        try{
+          const res = await fetch(`/api/classrooms/${classroomId}/chat/messages`);
+          if(!res.ok) return;
+          const data = await res.json();
+          renderMessages(data.messages || []);
+          // mark this classroom chat as seen for the current user
+          markChatSeen();
+        }catch(e){ /* ignore */ }
+      }
+
+      form.addEventListener('submit', async function(ev){
+        ev.preventDefault();
+        const val = input.value.trim();
+        if(!val) return;
+        try{
+          const res = await fetch(`/api/classrooms/${classroomId}/chat/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: val })
+          });
+          if(res.ok){
+            input.value = '';
+            await loadChat();
+          }
+        }catch(e){ /* ignore */ }
+      });
+
+      loadChat();
+      setInterval(loadChat, 5000);
+    })();
+  </script>
+{% endblock %}
+
+>>>>>>> 0b92d6c (Commit local UI and model changes)

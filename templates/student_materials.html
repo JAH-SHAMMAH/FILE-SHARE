@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 
+{% block title %}Materials from your teachers{% endblock %}
+
 {% block content %}
 <div class="container content-card">
-  <h2>Search results</h2>
-  <form method="get" class="hero-search" style="margin-bottom:12px">
-    <input name="q" value="{{ q }}" placeholder="Search presentations, authors, tags..." />
-    <button class="btn" type="submit">Search</button>
-  </form>
+  <h2>Materials from your teachers</h2>
+  <p class="muted" style="margin-bottom:12px;font-size:13px;">Presentations uploaded by teachers from the classrooms you are in.</p>
 
   {% if results %}
   <div class="grid grid--cards">
@@ -36,17 +35,11 @@
           </p>
         </div>
       </a>
-<<<<<<< HEAD
-      <button class="card__bookmark" type="button" data-id="{{ r.id }}" aria-label="Save presentation" title="Save for later">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
-      </button>
-=======
->>>>>>> 0b92d6c (Commit local UI and model changes)
     </article>
     {% endfor %}
   </div>
   {% else %}
-  <div class="empty">No results found for "{{ q }}".</div>
+  <div class="empty">No materials from your teachers yet.</div>
   {% endif %}
 </div>
 {% endblock %}

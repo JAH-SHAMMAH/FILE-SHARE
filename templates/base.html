@@ -71,15 +71,10 @@
             {% set t_privacy = 'Privacy' %}
           {% endif %}
 
-          <a class="nav-link" href="{{ url_for('featured') }}">{{ t_featured }}</a>
           {% set cu = request.state.current_user if request and request.state else None %}
           {% if cu %}
-            {% if cu.site_role == 'student' %}
-              <a class="nav-link" href="{{ url_for('student_classrooms') }}">{{ t_classrooms }}</a>
-              <a class="nav-link" href="{{ url_for('student_materials') }}">{{ t_materials }}</a>
-            {% endif %}
-            {% if cu.site_role in ['teacher', 'individual'] %}
-              <a class="nav-link" href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a>
+            {% if cu.site_role == 'teacher' %}
+            <a class="nav-link" href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a>
             {% endif %}
             <a class="nav-link" href="{{ url_for('messages_page') }}">
               {{ t_messages }}
@@ -87,8 +82,10 @@
             </a>
             <a class="nav-link" href="{{ url_for('upload') }}">{{ t_upload }}</a>
           {% else %}
-            <a class="nav-link" href="{{ url_for('login') }}">{{ t_login }}</a>
-            <a class="nav-link" href="{{ url_for('register') }}">{{ t_signup }}</a>
+            <a class="nav-link" href="{{ url_for('about') }}">About us</a>
+            <a class="nav-link" href="{{ url_for('upload') }}">{{ t_upload }}</a>
+            <a class="nav-link" href="{{ url_for('login') }}">Sign in</a>
+            <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
           {% endif %}
         </div>
 
@@ -108,18 +105,7 @@
                 <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
               </button>
               <div>
-                <div class="profile-menu__name">
-                  {{ request.state.current_user.username }}
-                  {% if request.state.current_user.site_role == 'teacher' %}
-                    <span title="Teacher" style="color:#2563eb;">★</span>
-                  {% elif request.state.current_user.site_role == 'student' %}
-                    <span title="Student" style="color:#f59e0b;">★</span>
-                  {% elif request.state.current_user.site_role == 'individual' %}
-                    <span title="Individual" style="color:#dc2626;">★</span>
-                  {% elif request.state.current_user.site_role == 'passerby' %}
-                    <span title="Passerby" style="color:#111827;">★</span>
-                  {% endif %}
-                </div>
+                <div class="profile-menu__name">{{ request.state.current_user.username }}</div>
                 <div class="profile-menu__email">{{ request.state.current_user.email or '' }}</div>
               </div>
             </div>
@@ -146,6 +132,7 @@
           </div>
         {% endif %}
 
+        {% if request.state.current_user %}
         <div id="hamburger-menu" class="hamburger-menu" aria-hidden="true">
           <div class="hamburger-menu__inner">
             {% if request.state.current_user %}
@@ -170,6 +157,7 @@
             </div>
           </div>
         </div>
+        {% endif %}
       </nav>
     </div>
   </header>
@@ -249,16 +237,13 @@
     <div class="chat-modal__panel" style="width:360px;max-width:calc(100% - 24px);">
       <header class="chat-header">
         <div class="chat-header__title">Notifications</div>
-        <div style="display:flex;gap:6px;align-items:center;">
           <a href="{{ url_for('notifications_page') }}" class="btn btn--ghost" style="padding:4px 10px;font-size:13px;">Open page</a>
-          <button id="notif-close" class="icon-btn">✕</button>
-        </div>
+          <button id="notif-close" class="icon-btn" aria-label="Close notifications">✕</button>
       </header>
       <div id="notif-list" style="max-height:420px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;">
         <!-- notifications loaded via JS -->
       </div>
-      <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:space-between;align-items:center;">
-        <button id="notif-clear-all" class="btn btn--ghost" style="color:#b91c1c;border-color:#fecaca;">Clear feed</button>
+      <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
         <button id="notif-mark-all" class="btn btn--ghost">Mark all read</button>
       </div>
     </div>

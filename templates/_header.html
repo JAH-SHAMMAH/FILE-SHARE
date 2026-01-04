@@ -56,11 +56,19 @@
       {% else %}
         <div class="nav-links-right">
           <a class="nav-link small" href="{{ url_for('about') }}">About us</a>
+<<<<<<< HEAD
           <a class="nav-link small" href="{{ url_for('login') }}">Log in</a>
           <a class="nav-link btn" href="{{ url_for('register') }}">Start</a>
         </div>
       {% endif %}
       <button id="theme-toggle" aria-label="Coffee mode" class="icon-btn">☕ Coffee</button>
+=======
+          <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
+          <a class="nav-link small" href="{{ url_for('login') }}">Sign in</a>
+          <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
+        </div>
+      {% endif %}
+>>>>>>> 0b92d6c (Commit local UI and model changes)
     </nav>
   </div>
 </header>

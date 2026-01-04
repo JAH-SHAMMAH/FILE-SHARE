@@ -5,8 +5,25 @@
 {% block content %}
   <section class="fs-section">
     <div class="panel-head">
-      <h1 class="section-title">Notification Center</h1>
+      <h1 class="section-title section-title--xl">Notification Center</h1>
       <p class="muted">All your recent activity in one place{% if current_user %}, {{ current_user.username }}{% endif %}.</p>
+    </div>
+
+    <div style="margin:12px 0 18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;max-width:720px;">
+      <div class="muted" style="font-size:13px;">
+        Filter your feed and clear notifications when you're done.
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <label for="notif-page-filter" class="sr-only">Filter notifications</label>
+        <select id="notif-page-filter" name="filter" style="min-width:170px;font-size:13px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);">
+          <option value="" {% if not active_filter %}selected{% endif %}>All notifications</option>
+          <option value="unread" {% if active_filter == 'unread' %}selected{% endif %}>Unread only</option>
+          <option value="messages" {% if active_filter == 'messages' %}selected{% endif %}>Messages</option>
+          <option value="uploads" {% if active_filter == 'uploads' %}selected{% endif %}>Uploads</option>
+          <option value="classrooms" {% if active_filter == 'classrooms' %}selected{% endif %}>Classrooms</option>
+        </select>
+        <button type="button" id="notif-page-clear" class="btn btn--ghost" style="padding:6px 10px;font-size:13px;">Clear feed</button>
+      </div>
     </div>
 
     {% if notifications and notifications|length > 0 %}
@@ -44,11 +61,22 @@
             {% endif %}
           </div>
         </div>
-        {% if n.link %}
-        <div style="flex:0 0 auto;margin-left:8px;">
-          <a class="btn btn--ghost" href="{{ n.link }}">Open</a>
+        <div style="flex:0 0 auto;margin-left:8px;display:flex;gap:6px;align-items:center;">
+          {% if n.accept_url or n.decline_url %}
+            {% if n.accept_url %}
+            <form method="post" action="{{ n.accept_url }}" style="margin:0;">
+              <button class="btn btn--ghost" type="submit" style="padding:4px 10px;font-size:13px;">Accept</button>
+            </form>
+            {% endif %}
+            {% if n.decline_url %}
+            <form method="post" action="{{ n.decline_url }}" style="margin:0;">
+              <button class="btn btn--ghost" type="submit" style="padding:4px 10px;font-size:13px;">Decline</button>
+            </form>
+            {% endif %}
+          {% elif n.link %}
+            <a class="btn btn--ghost" href="{{ n.link }}">Open</a>
+          {% endif %}
         </div>
-        {% endif %}
       </article>
       {% endfor %}
     </div>
@@ -56,4 +84,41 @@
     <p class="muted">You don't have any notifications yet.</p>
     {% endif %}
   </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    const filterSel = document.getElementById('notif-page-filter');
+    if (filterSel){
+      filterSel.addEventListener('change', function(){
+        try {
+          const url = new URL(window.location.href);
+          const val = filterSel.value || '';
+          if (val) url.searchParams.set('filter', val);
+          else url.searchParams.delete('filter');
+          window.location.href = url.pathname + url.search + url.hash;
+        } catch(e){
+          // fallback: simple query string rebuild
+          const val = encodeURIComponent(filterSel.value || '');
+          const base = window.location.pathname;
+          window.location.href = val ? (base + '?filter=' + val) : base;
+        }
+      });
+    }
+
+    const clearBtn = document.getElementById('notif-page-clear');
+    if (clearBtn){
+      clearBtn.addEventListener('click', async function(){
+        clearBtn.disabled = true;
+        try {
+          await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Accept': 'application/json' } });
+        } catch(e) {}
+        // reload current page (preserving active filter, if any)
+        window.location.reload();
+      });
+    }
+  });
+  </script>
 {% endblock %}

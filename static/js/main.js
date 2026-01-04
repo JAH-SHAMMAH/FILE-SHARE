@@ -334,8 +334,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const panel = document.getElementById('notif-panel');
     if (!panel) return;
     panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
-    // load list
-    const list = await fetchNotifications();
+    // load list with optional filter from select
+    const filterSel = document.getElementById('notif-filter');
+    const filter = filterSel ? (filterSel.value || '') : '';
+    const qs = filter ? ('?filter=' + encodeURIComponent(filter)) : '';
+    const list = await (await fetch('/api/notifications' + qs)).json();
     const container = document.getElementById('notif-list');
     if (!container) return;
     container.innerHTML = '';
@@ -454,14 +457,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(e){}
   });
   document.getElementById('notif-mark-all')?.addEventListener('click', async ()=>{
-    const list = await fetchNotifications();
-    for (const n of list.filter(x=>!x.read)){
-      try{ await fetch('/api/notifications/' + n.id + '/read', { method: 'POST' }); }catch(e){}
-    }
+    try{
+      await fetch('/api/notifications/clear', { method: 'POST' });
+    }catch(e){}
     refreshNotifBadge();
     const container = document.getElementById('notif-list');
     if (container) container.innerHTML = '<div class="muted" style="padding:8px">No notifications</div>';
   });
+
+  const notifFilter = document.getElementById('notif-filter');
+  if (notifFilter){
+    notifFilter.addEventListener('change', function(){
+      // reload panel with new filter
+      openNotifPanel();
+    });
+  }
 
   // initial badge refresh
   setTimeout(refreshNotifBadge, 800);
