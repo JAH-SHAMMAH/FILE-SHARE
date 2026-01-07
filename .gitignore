@@ -5,3 +5,6 @@ SLIDESHARE/db.sqlite
 
 # Python virtualenv
 .venv/
+app/__pycache__
+tests/__pycache__
+db.sqlite
