@@ -26,7 +26,7 @@
         </div>
         <div class="card__body">
           <h4>{{ r.title }}</h4>
-          <p class="muted">by {% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a>{% else %}Unknown{% endif %}</p>
+          <p class="muted">by&nbsp;{% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a> <span class="role-badge role-badge--teacher">★</span>{% else %}Unknown{% endif %}</p>
           <p class="muted" style="margin-top:6px;">
             {% if r.owner_presentation_count is defined %}<strong>{{ r.owner_presentation_count }}</strong> presentations{% endif %}
             {% if r.views is defined %} · <strong>{{ r.views }}</strong> views{% endif %}

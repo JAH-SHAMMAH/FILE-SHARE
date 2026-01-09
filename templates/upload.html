@@ -91,7 +91,7 @@
           <div style="margin-top:6px; font-size:13px;">Saved: <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></div>
           {% if p.owner_username %}
           <div style="font-size:13px; margin-top:6px;">
-            by <a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>
+            by&nbsp;{% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a> <span class="role-badge role-badge--passerby">★</span>{% else %}Unknown{% endif %}
           </div>
           {% endif %}
         </div>

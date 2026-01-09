@@ -27,7 +27,7 @@
         </div>
         <div class="card__body">
           <h4>{{ r.title }}</h4>
-          <p class="muted">by {% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a>{% else %}Unknown{% endif %}</p>
+          <p class="muted">by&nbsp;{% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a> <span class="role-badge role-badge--passerby">★</span>{% else %}Unknown{% endif %}</p>
           <p class="muted" style="margin-top:6px;">
             {% if r.owner_presentation_count is defined %}<strong>{{ r.owner_presentation_count }}</strong> presentations{% endif %}
             {% if r.views is defined %} · <strong>{{ r.views }}</strong> views{% endif %}
@@ -36,12 +36,9 @@
           </p>
         </div>
       </a>
-<<<<<<< HEAD
       <button class="card__bookmark" type="button" data-id="{{ r.id }}" aria-label="Save presentation" title="Save for later">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
       </button>
-=======
->>>>>>> 0b92d6c (Commit local UI and model changes)
     </article>
     {% endfor %}
   </div>

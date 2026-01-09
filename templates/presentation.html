@@ -12,7 +12,7 @@
             <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef1ff,#ffd9a8);font-weight:700;color:#1f1f3f">{{ (p.owner_username or 'U')[:1].upper() }}</div>
           {% endif %}
           <div style="line-height:1">
-            <div style="font-weight:700">{{ p.owner_username or (p.author or 'Unknown') }}</div>
+            <div style="font-weight:700">{{ p.owner_username or (p.author or 'Unknown') }} <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span></div>
             <div class="muted" style="font-size:12px">{{ owner_presentation_count or 0 }} presentations · {{ followers_count or 0 }} followers</div>
           </div>
         </a>
@@ -112,7 +112,6 @@
         <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Mind Map</button>
       {% endif %}
     </div>
-<<<<<<< HEAD
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if current_user and current_user.id == p.owner_id %}
         <button id="delete-presentation-btn" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">
@@ -123,9 +122,6 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
       </button>
     </div>
-=======
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;"></div>
->>>>>>> 0b92d6c (Commit local UI and model changes)
   </div>
 
   <!-- Two-column viewer: thumbnails left, large viewer right -->
@@ -152,9 +148,13 @@
       </div>
 
       <div class="presentation-main-viewer" id="presentation-main-viewer" role="region" aria-label="Slide viewer">
-        {# For original PDFs, use the inline PDF iframe. For converted PPT/PPTX
-           we rely on the image-based slide viewer so content is always visible. #}
-        {% if viewer_url %}
+        {# Render video uploads as native HTML5 video for best quality; fall back to PDF viewer or placeholder otherwise #}
+        {% if p.mimetype and p.mimetype.startswith('video') and original_url %}
+          <video id="presentation-video" controls preload="metadata" playsinline style="width:100%;max-height:78vh;background:#000;display:block;">
+            <source src="{{ original_url }}" type="{{ p.mimetype }}">
+            Your browser does not support the video tag. <a href="{{ original_url }}">Download</a>
+          </video>
+        {% elif viewer_url %}
         <!-- When a viewer_url is available (original PDF or converted PDF), render it inline. -->
         <object id="initial-viewer-object" data="{{ viewer_url }}" type="application/pdf" aria-label="Presentation preview" style="width:100%;height:480px;border:none;display:block;">
           <iframe
@@ -236,48 +236,44 @@
     </form>
   </section>
 </div>
-<<<<<<< HEAD
+    <!-- Delete confirmation modal (owner only) -->
+    {% if current_user and current_user.id == p.owner_id %}
+    <div id="delete-modal" style="position:fixed;inset:0;background:rgba(15,23,42,0.7);display:none;align-items:center;justify-content:center;z-index:1000;">
+      <div style="background:#fff;border-radius:12px;max-width:420px;width:90%;padding:20px;box-shadow:0 20px 40px rgba(15,23,42,0.35);">
+        <h3 style="margin-top:0;margin-bottom:8px;">Delete this presentation?</h3>
+        <p class="muted" style="margin:0 0 16px 0;">This will permanently delete "{{ p.title }}" and its files. This action cannot be undone.</p>
+        <form method="post" action="/presentations/{{ p.id }}/delete" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+          <button type="button" id="delete-cancel-btn" class="btn btn--ghost">Cancel</button>
+          <button type="submit" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
 
-  <!-- Delete confirmation modal (owner only) -->
-  {% if current_user and current_user.id == p.owner_id %}
-  <div id="delete-modal" style="position:fixed;inset:0;background:rgba(15,23,42,0.7);display:none;align-items:center;justify-content:center;z-index:1000;">
-    <div style="background:#fff;border-radius:12px;max-width:420px;width:90%;padding:20px;box-shadow:0 20px 40px rgba(15,23,42,0.35);">
-      <h3 style="margin-top:0;margin-bottom:8px;">Delete this presentation?</h3>
-      <p class="muted" style="margin:0 0 16px 0;">This will permanently delete "{{ p.title }}" and its files. This action cannot be undone.</p>
-      <form method="post" action="/presentations/{{ p.id }}/delete" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
-        <button type="button" id="delete-cancel-btn" class="btn btn--ghost">Cancel</button>
-        <button type="submit" class="btn" style="background:#dc2626;color:#fff;border-color:#b91c1c;">Delete</button>
-      </form>
-    </div>
-  </div>
-  {% endif %}
-=======
- 
-<!-- Post-upload share modal -->
-<div id="upload-share-modal" class="chat-modal" style="display:none;">
-  <div class="chat-modal__backdrop"></div>
-  <div class="chat-modal__panel" style="max-width:460px;width:100%;">
-    <header class="chat-header">
-      <div class="chat-header__title" style="font-size:22px;font-weight:800;letter-spacing:0.02em;">
-        🎉 IT'S LIVE
+    <!-- Post-upload share modal -->
+    <div id="upload-share-modal" class="chat-modal" style="display:none;">
+      <div class="chat-modal__backdrop"></div>
+      <div class="chat-modal__panel" style="max-width:460px;width:100%;">
+        <header class="chat-header">
+          <div class="chat-header__title" style="font-size:22px;font-weight:800;letter-spacing:0.02em;">
+            🎉 IT'S LIVE
+          </div>
+          <button type="button" class="icon-btn" data-close-share>✕</button>
+        </header>
+        <div style="padding:18px 18px 16px;">
+          <p class="muted" style="margin-top:0;margin-bottom:14px;font-size:15px;">
+            Let the world see it. Share your story and inspire someone today.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+            <a href="#" target="_blank" rel="noopener" class="btn" data-share="facebook">Share on Facebook</a>
+            <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="x">Share on X</a>
+            <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="linkedin">Share on LinkedIn</a>
+          </div>
+          <button type="button" class="btn btn--ghost" data-copy-link>Copy link</button>
+        </div>
       </div>
-      <button type="button" class="icon-btn" data-close-share>✕</button>
-    </header>
-    <div style="padding:18px 18px 16px;">
-      <p class="muted" style="margin-top:0;margin-bottom:14px;font-size:15px;">
-        Let the world see it. Share your story and inspire someone today.
-      </p>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
-        <a href="#" target="_blank" rel="noopener" class="btn" data-share="facebook">Share on Facebook</a>
-        <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="x">Share on X</a>
-        <a href="#" target="_blank" rel="noopener" class="btn btn--ghost" data-share="linkedin">Share on LinkedIn</a>
-      </div>
-      <button type="button" class="btn btn--ghost" data-copy-link>Copy link</button>
     </div>
-  </div>
-</div>
->>>>>>> 0b92d6c (Commit local UI and model changes)
 {% endblock %}
 
 {% block scripts %}
@@ -569,23 +565,16 @@ function makePoller(taskType, contentEl, statusEl){
       if (!res.ok) throw new Error('no thumbs');
       const data = await res.json();
       thumbnails = data.thumbnails || [];
-<<<<<<< HEAD
       if (thumbnails.length) {
         renderThumbs();
         showPage(0);
       } else if (data.status === 'queued') {
         await pollThumbnails();
-=======
-      if (thumbnails.length){
-        renderThumbs();
-        await showPage(0);
       } else if (!autoConvertTried){
         autoConvertTried = true;
         await autoConvertAndLoad();
->>>>>>> 0b92d6c (Commit local UI and model changes)
-      } else {
-        renderFallback();
       }
+      
     }catch(e){
       console.warn('thumbnails fetch failed', e);
       if (!autoConvertTried){
@@ -906,17 +895,20 @@ function makePoller(taskType, contentEl, statusEl){
       if(j.thumbnails && j.thumbnails.length){
         j.thumbnails.forEach(u=>{ out.push(`<img src="${u}" alt="thumb" style="max-width:160px;margin-right:6px;margin-bottom:6px;"/>`); });
       }
-<<<<<<< HEAD
       // check converted PDF (GET is fine and avoids HEAD 405 issues)
-      const rp = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { credentials: 'include' });
-      if(rp && rp.ok){
-        out.push(`<div><a href="/presentations/${presentationId}/converted_pdf">Download converted PDF</a></div>`);
-=======
-      // check converted PDF
-      const rp = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { method: 'HEAD', credentials: 'include' });
-      if(rp && rp.status === 200){
-        out.push(`<div><a href="/presentations/${presentationId}/converted_pdf?inline=1" target="_blank" rel="noopener">Open converted PDF</a></div>`);
->>>>>>> 0b92d6c (Commit local UI and model changes)
+      try{
+        const rpGet = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { credentials: 'include' });
+        if(rpGet && rpGet.ok){
+          out.push(`<div><a href="/presentations/${presentationId}/converted_pdf">Download converted PDF</a></div>`);
+        }
+      }catch(e){
+        // fallback to HEAD check for servers that support it
+        try{
+          const rpHead = await fetch(`/presentations/${presentationId}/converted_pdf?inline=0`, { method: 'HEAD', credentials: 'include' });
+          if(rpHead && rpHead.status === 200){
+            out.push(`<div><a href="/presentations/${presentationId}/converted_pdf?inline=1" target="_blank" rel="noopener">Open converted PDF</a></div>`);
+          }
+        }catch(e2){ /* ignore */ }
       }
       if(out.length) listEl.innerHTML = out.join(''); else listEl.textContent = 'Preview will be ready after conversion.';
     }catch(e){ listEl.textContent = 'Failed to load previews'; }

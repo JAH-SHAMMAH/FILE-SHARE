@@ -4,13 +4,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./db.sqlite")
+from pathlib import Path
+
+# Default to the repository-level db.sqlite next to the SLIDESHARE package
+default_db_path = Path(__file__).resolve().parents[1] / "db.sqlite"
+default_db_url = f"sqlite:///{default_db_path.as_posix()}"
+DATABASE_URL = os.getenv("DATABASE_URL", default_db_url)
 engine = create_engine(
     DATABASE_URL, echo=False, connect_args={"check_same_thread": False}
 )
 
 
 def create_db_and_tables():
+    print(f"[db] creating tables on {DATABASE_URL}")
     SQLModel.metadata.create_all(engine)
     # perform simple additive migrations for SQLite: add new columns if missing
     try:

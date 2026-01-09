@@ -72,7 +72,11 @@
           {% endif %}
 
           {% set cu = request.state.current_user if request and request.state else None %}
-          {% if cu %}
+            {% if cu %}
+            <a class="nav-link" href="{{ url_for('student_classrooms') }}">My Classrooms</a>
+            {% if request.state.current_user and request.state.current_user.site_role != 'teacher' %}
+            <a class="nav-link" href="{{ url_for('student_materials') }}">Materials</a>
+            {% endif %}
             {% if cu.site_role == 'teacher' %}
             <a class="nav-link" href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a>
             {% endif %}

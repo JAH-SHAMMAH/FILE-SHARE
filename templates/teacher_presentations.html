@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}Presentations by {{ teacher.username }}{% endblock %}
+{% block title %}Presentations by&nbsp;{{ teacher.username }}{% endblock %}
 
 {% block content %}
   <section class="container" style="margin-top:18px;">
@@ -10,7 +10,7 @@
         {% if cu and cu.site_role == 'student' %}
           Your teacher&apos;s presentations
         {% else %}
-          Presentations by {{ teacher.username }}
+          {% set _role = teacher.site_role|default('passerby') %}Presentations by&nbsp;{{ teacher.username }} <span class="role-badge role-badge--{{ _role|lower }}">★</span>
         {% endif %}
       </h1>
       <p class="muted">
@@ -28,7 +28,7 @@
         {% if cu and cu.site_role == 'student' %}
           Your teacher&apos;s presentations
         {% else %}
-          {{ teacher.username }}&apos;s presentations
+          {% set _role = teacher.site_role|default('passerby') %}{{ teacher.username }}&apos;s presentations <span class="role-badge role-badge--{{ _role|lower }}">★</span>
         {% endif %}
       </button>
     </div>

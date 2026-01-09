@@ -157,8 +157,8 @@ document.addEventListener('DOMContentLoaded', function(){
     const rawName = m.full_name || m.username || (isMe ? 'You' : (otherUsername || 'User'));
     const initials = (rawName || 'U').trim().slice(0, 2).toUpperCase() || 'U';
 
-    // normalize role once so avatar + badge can share colors
-    const role = (m.site_role || '').toString().toLowerCase();
+    // normalize role once so avatar + badge can share colors (default passerby)
+    const role = (m.site_role || 'passerby').toString().toLowerCase();
 
     if (m.avatar){
       const img = document.createElement('img');
@@ -191,18 +191,16 @@ document.addEventListener('DOMContentLoaded', function(){
     nameLabel.style.fontSize = '13px';
     nameWrap.appendChild(nameLabel);
 
-    // role badge (teacher, student, individual, passerby)
-    if (m.site_role){
-      const badge = document.createElement('span');
-      badge.className = 'role-badge';
-      if (role === 'teacher') badge.className += ' role-badge--teacher';
-      else if (role === 'student') badge.className += ' role-badge--student';
-      else if (role === 'individual') badge.className += ' role-badge--individual';
-      else if (role === 'passerby') badge.className += ' role-badge--passerby';
-      badge.textContent = '★';
-      badge.title = role.charAt(0).toUpperCase() + role.slice(1);
-      nameWrap.appendChild(badge);
-    }
+    // role badge (teacher, student, individual, passerby) — always show
+    const badge = document.createElement('span');
+    badge.className = 'role-badge';
+    if (role === 'teacher') badge.className += ' role-badge--teacher';
+    else if (role === 'student') badge.className += ' role-badge--student';
+    else if (role === 'individual') badge.className += ' role-badge--individual';
+    else if (role === 'passerby') badge.className += ' role-badge--passerby';
+    badge.textContent = '★';
+    badge.title = role.charAt(0).toUpperCase() + role.slice(1);
+    nameWrap.appendChild(badge);
 
     header.appendChild(avatarWrap);
     header.appendChild(nameWrap);
@@ -237,12 +235,8 @@ document.addEventListener('DOMContentLoaded', function(){
       }
       text.appendChild(link);
     }
-    const meta = document.createElement('div');
-    meta.className = 'chat-msg__meta';
-    meta.textContent = new Date(m.created_at).toLocaleString();
     el.appendChild(header);
     el.appendChild(text);
-    el.appendChild(meta);
     container.appendChild(el);
     container.scrollTop = container.scrollHeight;
   }

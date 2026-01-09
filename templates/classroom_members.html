@@ -1,0 +1,13 @@
+{# classroom_members.html - AJAX and full-page member list rendering #}
+<ul style="list-style:none;padding:0;margin:0;">
+  {% for member in members %}
+    <li style="margin-bottom:8px;">
+      <a href="/profile/{{ member.id }}" style="color:#007bff;text-decoration:underline;font-weight:500;">
+        {{ member.username or ('User #' ~ member.id) }}
+      </a>
+      <span style="color:#888;font-size:13px;">({{ member.role|capitalize }})</span>
+    </li>
+  {% else %}
+    <li style="color:#c00;">No members found.</li>
+  {% endfor %}
+</ul>

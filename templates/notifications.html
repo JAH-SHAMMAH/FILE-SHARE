@@ -49,6 +49,7 @@
               <a href="/users/{{ n.actor_username }}" style="text-decoration:none;color:inherit;font-weight:700;">
                 {{ n.actor_username }}
               </a>
+              <span class="role-badge role-badge--{{ (n.actor_site_role|default('passerby'))|lower }}">★</span>
               {{ n.message }}
             {% else %}
               {{ n.message }}

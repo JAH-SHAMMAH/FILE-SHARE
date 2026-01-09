@@ -31,7 +31,7 @@
           </div>
           <div class="card__body">
             <h4>{{ p.title }}</h4>
-            <p class="muted">by {% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}{{ p.author or 'Unknown' }}{% endif %}</p>
+            <p class="muted">by&nbsp;{% if p.owner_username %}<span class="user-link" data-href="/users/{{ p.owner_username }}">{{ p.owner_username }}</span> <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}{{ p.author or 'Unknown' }}{% endif %}</p>
             <p class="muted" style="margin-top:6px;">
               <strong>{{ p.owner_presentation_count or 0 }}</strong> presentations ·
               <strong>{{ p.views or 0 }}</strong> views ·
@@ -40,12 +40,9 @@
             </p>
           </div>
         </a>
-<<<<<<< HEAD
         <button class="card__bookmark" type="button" data-id="{{ p.id }}" aria-label="Save presentation" title="Save for later">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
         </button>
-=======
->>>>>>> 0b92d6c (Commit local UI and model changes)
       </article>
       {% endfor %}
     </div>
@@ -155,7 +152,15 @@
     }
 
     if (track){
+      // delegated click handler for user-link inside cards (avoid nested anchor issues)
       track.addEventListener('click', function(ev){
+        const userLink = ev.target.closest('.user-link');
+        if (userLink) {
+          ev.preventDefault();
+          const href = userLink.getAttribute('data-href');
+          if (href) window.location.href = href;
+          return;
+        }
         const previewBtn = ev.target.closest('.preview-trigger');
         const card = ev.target.closest('.featured-card');
         if (!card) return;

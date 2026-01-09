@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from .models import ConversionJob, Presentation
 from .models import AIResult
 import httpx
+import json
 from .convert import (
     convert_doc_to_pdf,
     generate_pdf_thumbnails,
@@ -25,6 +26,63 @@ from .convert import (
     generate_audio_waveform,
     render_code_syntax,
 )
+
+try:
+    import boto3
+except Exception:
+    boto3 = None
+
+
+def upload_file_to_s3(local_path: str, bucket: str, key: str) -> bool:
+    try:
+        if boto3 is None:
+            return False
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name=os.getenv("AWS_REGION"),
+        )
+        s3.upload_file(local_path, bucket, key)
+        return True
+    except Exception:
+        return False
+
+
+def transcode_video(src_path: str, out_path: str) -> bool:
+    """Transcode a video to a web-optimized MP4 using ffmpeg.
+
+    Returns True on success and writes to out_path.
+    """
+    try:
+        # prefer system ffmpeg; ensure output directory exists
+        out_dir = Path(out_path).parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(src_path),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-movflags",
+            "+faststart",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(out_path),
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
+        if res.returncode == 0 and Path(out_path).exists():
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def convert_presentation(presentation_id: int, filename: str):
@@ -77,6 +135,100 @@ def convert_presentation(presentation_id: int, filename: str):
             res = generate_video_thumbnail(str(src), str(thumb_out))
             if res:
                 job_log.append('video thumbnail generated')
+            # attempt to transcode to a web-optimized MP4 for better playback
+            try:
+                web_out = save_dir / f"{presentation_id}_web.mp4"
+                ok = transcode_video(str(src), str(web_out))
+                if ok:
+                    job_log.append(f"transcoded video -> {web_out.name}")
+                    # optionally produce HLS segments if enabled
+                    hls_enabled = os.getenv("ENABLE_HLS", "0").lower() in ("1", "true", "yes")
+                    hls_index = None
+                    if hls_enabled:
+                        try:
+                            hls_dir = save_dir / "hls" / str(presentation_id)
+                            hls_dir.mkdir(parents=True, exist_ok=True)
+                            # simple single-variant HLS (VOD)
+                            hls_index = str(hls_dir / "index.m3u8")
+                            cmd = [
+                                "ffmpeg",
+                                "-y",
+                                "-i",
+                                str(src),
+                                "-c:v",
+                                "libx264",
+                                "-preset",
+                                "veryfast",
+                                "-crf",
+                                "23",
+                                "-c:a",
+                                "aac",
+                                "-b:a",
+                                "128k",
+                                "-hls_time",
+                                "6",
+                                "-hls_playlist_type",
+                                "vod",
+                                "-hls_segment_filename",
+                                str(hls_dir / "segment_%03d.ts"),
+                                hls_index,
+                            ]
+                            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900)
+                            if Path(hls_index).exists():
+                                job_log.append(f"generated HLS -> {hls_index}")
+                        except Exception:
+                            hls_index = None
+                    # decide whether to upload derived files to S3
+                    s3_bucket = os.getenv("S3_BUCKET") or os.getenv("AWS_S3_BUCKET")
+                    if s3_bucket and boto3 is not None:
+                        try:
+                            # prefer HLS index if available
+                            if hls_index and Path(hls_index).exists():
+                                # upload all files in the hls dir
+                                key_prefix = f"presentations/{presentation_id}/hls/"
+                                for p in Path(hls_dir).glob("*"):
+                                    upload_file_to_s3(str(p), s3_bucket, key_prefix + p.name)
+                                s3_key = key_prefix + "index.m3u8"
+                                with Session(engine) as session:
+                                    jr = session.get(ConversionJob, job_record.id)
+                                    jr.result = f"s3://{s3_bucket}/{s3_key}"
+                                    session.add(jr)
+                                    session.commit()
+                            else:
+                                # upload the web mp4
+                                key = f"presentations/{presentation_id}/{web_out.name}"
+                                if upload_file_to_s3(str(web_out), s3_bucket, key):
+                                    with Session(engine) as session:
+                                        jr = session.get(ConversionJob, job_record.id)
+                                        jr.result = f"s3://{s3_bucket}/{key}"
+                                        session.add(jr)
+                                        session.commit()
+                                else:
+                                    with Session(engine) as session:
+                                        jr = session.get(ConversionJob, job_record.id)
+                                        jr.result = web_out.name
+                                        session.add(jr)
+                                        session.commit()
+                        except Exception:
+                            # fallback to local result
+                            with Session(engine) as session:
+                                jr = session.get(ConversionJob, job_record.id)
+                                jr.result = web_out.name
+                                session.add(jr)
+                                session.commit()
+                    else:
+                        # no S3: store local HLS index if produced, otherwise web mp4 name
+                        with Session(engine) as session:
+                            jr = session.get(ConversionJob, job_record.id)
+                            if hls_index and Path(hls_index).exists():
+                                rel = os.path.relpath(hls_index, start=str(save_dir))
+                                jr.result = rel.replace("\\", "/")
+                            else:
+                                jr.result = web_out.name
+                            session.add(jr)
+                            session.commit()
+            except Exception:
+                pass
 
         # audio
         elif ext in ('.mp3', '.wav', '.m4a', '.ogg'):
@@ -94,14 +246,29 @@ def convert_presentation(presentation_id: int, filename: str):
             if res:
                 job_log.append('code preview generated')
 
-        # finalize job record
+        # finalize job record; do not overwrite an existing result
         with Session(engine) as session:
             job_record = session.get(ConversionJob, job_record.id)
             job_record.status = "finished"
-            job_record.result = str(Path(pdf_path).name) if pdf_path else (Path(src).name)
+            # preserve any result set earlier (e.g., web MP4 or HLS index); otherwise set PDF or original filename
+            if not getattr(job_record, 'result', None):
+                job_record.result = str(Path(pdf_path).name) if pdf_path else Path(src).name
             job_record.log = "\n".join(job_log)
             session.add(job_record)
             session.commit()
+        # if thumbnails were generated, cache their URLs in Redis for fast lookup
+        try:
+            if redis is not None and thumbs:
+                urls = [f"/presentations/{presentation_id}/slide/{i}" for i in range(len(thumbs))]
+                key = f"presentation:{presentation_id}:thumbnails"
+                try:
+                    redis.set(key, json.dumps(urls))
+                    # keep cached thumbnails for 7 days
+                    redis.expire(key, 7 * 24 * 3600)
+                except Exception:
+                    pass
+        except Exception:
+            pass
     except Exception as e:
         # record failure and log
         with Session(engine) as session:
@@ -115,6 +282,57 @@ def convert_presentation(presentation_id: int, filename: str):
 
 
 def enqueue_conversion(presentation_id: int, filename: str):
+    # Try to generate a fast, single-page thumbnail synchronously so the UI can show
+    # an immediate preview when clicked. This is a best-effort step and does not
+    # replace the full background conversion performed by the queued worker.
+    try:
+        save_dir = Path(os.getenv("UPLOAD_DIR", "./uploads"))
+        src = save_dir / filename
+        thumbs_dir = save_dir / "thumbs" / str(presentation_id)
+        thumbs_dir.mkdir(parents=True, exist_ok=True)
+        quick_thumbs = []
+        ext = src.suffix.lower() if src.suffix else ''
+        if src.exists():
+            if ext == '.pdf':
+                quick_thumbs = generate_pdf_thumbnails(str(src), str(thumbs_dir), max_pages=1)
+            elif ext in ('.doc', '.docx', '.odt', '.ppt', '.pptx'):
+                try:
+                    pdfp = convert_doc_to_pdf(str(src), str(save_dir))
+                    if pdfp:
+                        quick_thumbs = generate_pdf_thumbnails(pdfp, str(thumbs_dir), max_pages=1)
+                except Exception:
+                    pass
+            elif ext in ('.mp4', '.mov', '.m4v', '.webm'):
+                try:
+                    out = thumbs_dir / 'video_preview.png'
+                    res = generate_video_thumbnail(str(src), str(out))
+                    if res:
+                        quick_thumbs = [str(out)]
+                except Exception:
+                    pass
+            elif ext in ('.mp3', '.wav', '.m4a', '.ogg'):
+                try:
+                    out = thumbs_dir / 'waveform.png'
+                    res = generate_audio_waveform(str(src), str(out))
+                    if res:
+                        quick_thumbs = [str(out)]
+                except Exception:
+                    pass
+        if quick_thumbs:
+            try:
+                urls = [f"/presentations/{presentation_id}/slide/{i}" for i in range(len(quick_thumbs))]
+                key = f"presentation:{presentation_id}:thumbnails"
+                if redis is not None:
+                    try:
+                        redis.set(key, json.dumps(urls))
+                        redis.expire(key, 7 * 24 * 3600)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     job = q.enqueue(convert_presentation, presentation_id, filename)
     with Session(engine) as session:
         cj = ConversionJob(

@@ -12,7 +12,6 @@
         {% for cls in classrooms %}
           <article class="card" style="background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 10px 22px rgba(15,23,42,0.10);">
             <h2 style="margin:0 0 6px 0;font-size:18px;">{{ cls.name }}</h2>
-            <p class="muted" style="margin:0 0 8px 0;font-size:13px;">Classroom ID: {{ cls.id }}</p>
             {% if cls.teacher_names and cls.teacher_names|length %}
               <p class="muted" style="margin:0 0 10px 0;font-size:13px;">Teachers: {{ cls.teacher_names|join(', ') }}</p>
             {% endif %}

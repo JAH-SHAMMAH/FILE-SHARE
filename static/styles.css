@@ -7,7 +7,7 @@
   --nav: #f5f2ea;           /* header/nav background */
   --border: #e5e7eb;        /* soft gray border */
   --muted: #6b7280;         /* muted gray for secondary text */
-  --text: #000000;          /* dark heading/body text (true black for contrast) */
+  --text: #000000;          /* dark heading/body text (true black) */
   --brand-1: #111827;       /* primary dark button */
   --brand-2: #111827;       /* kept for gradients if needed */
   --accent: #111827;        /* accent lines/buttons */
@@ -139,6 +139,23 @@ body.role-teacher {
   color: #111827; /* black/near-black star */
   border-color: rgba(17,24,39,0.45);
   background: rgba(17,24,39,0.06);
+}
+
+/* name link inside listing cards when wrapped by an outer link */
+.user-link {
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  display: inline;
+}
+/* Ensure displayed usernames are strong/black for readability */
+.user-link, .muted a, .card__body a, .card__meta a {
+  color: #111827 !important;
+  text-decoration: none;
+}
+/* underline on hover for username-like links */
+.user-link:hover, .muted a:hover, .card__body a:hover, .card__meta a:hover {
+  text-decoration: underline !important;
 }
 
 /* Teacher-specific chat tweaks */
@@ -398,6 +415,28 @@ body.role-teacher {
 .messages-empty-chip-dot { width:7px; height:7px; border-radius:999px; background:#f97316; }
 .messages-empty-cta-primary { padding:10px 18px; border-radius:999px; border:none; background:#111827; color:#f9fafb; font-weight:700; cursor:pointer; box-shadow:0 14px 30px rgba(15,23,42,0.6); }
 .messages-empty-cta-secondary { padding:9px 14px; border-radius:999px; border:1px solid rgba(15,23,42,0.14); background:rgba(248,250,252,0.9); color:#111827; font-weight:600; cursor:pointer; }
+
+/* Performance / data tables styling */
+.content-card h1 { color: var(--text); margin-bottom:6px; }
+.content-card .data-table thead th {
+  background: rgba(17,24,39,0.04);
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+.content-card .data-table tbody td { color: var(--text); padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.content-card .data-table tbody tr:nth-child(even) { background: rgba(15,23,42,0.02); }
+.content-card .data-table tbody tr:hover { background: rgba(17,24,39,0.03); }
+.content-card .muted { color: var(--muted); }
+.content-card .btn { padding: 8px 12px; border-radius: 10px; }
+.content-card .btn--ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+/* Small stats inline */
+.content-card .stat { font-size: 14px; color: var(--muted); }
+.content-card .stat strong { color: var(--text); margin-left:6px; }
 .messages-convo { justify-content:flex-start; width:100%; padding:9px 10px; display:flex; border-radius:14px; border:1px solid transparent; transition:background-color 120ms ease, border-color 120ms ease, transform 120ms ease; }
 .messages-convo:hover { background:rgba(15,23,42,0.04); border-color:rgba(148,163,184,0.6); transform:translateY(-1px); }
 .messages-convo-inner { display:flex; align-items:center; gap:10px; width:100%; }
@@ -1377,3 +1416,95 @@ body.auth-body {
   .signed-in-metrics { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .dashboard-hero { flex-direction: column; align-items: flex-start; }
 }
+
+/* Ensure role badges are always visible and consistent (override) */
+.role-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 2px 6px !important;
+  margin-left: 6px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+
+/* Generic modal styles (used by classroom create modal, members modal, previews) */
+.modal,
+#members-modal,
+#classroom-modal-backdrop,
+.preview-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal[aria-hidden="false"],
+.modal.is-open,
+#members-modal.show,
+#classroom-modal-backdrop.show,
+.preview-modal:not(.hidden) {
+  display: flex;
+}
+
+.modal__panel,
+.modal > .modal__panel,
+.preview-dialog,
+.content-card,
+#members-modal > div,
+#classroom-modal-panel {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px 18px;
+  max-width: 720px;
+  width: 96%;
+  box-shadow: 0 18px 48px rgba(2,6,23,0.12);
+  border: 1px solid var(--border);
+}
+
+.modal__panel h3,
+#classroom-modal-panel h3 {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+.modal .modal__actions,
+.preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* Small helper to make inline close buttons look right inside modals */
+.modal .modal-close,
+.preview-close,
+.hamburger {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+}
+.modal .modal-close:hover,
+.preview-close:hover,
+.hamburger:hover { background: rgba(0,0,0,0.04); }
+
+/* Make .content-card consistent site-wide */
+.content-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15,23,42,0.06);
+}
+
+@media (max-width: 720px) {
+  .modal__panel,
+  #classroom-modal-panel,
+  #members-modal > div { width: 96%; max-width: 560px; }
+}
+

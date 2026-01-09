@@ -31,8 +31,12 @@
                 <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
               </button>
             <div>
-              <div class="profile-menu__name">{{ cu.username }}</div>
+              <div class="profile-menu__name">{{ cu.username }} {% set _role = cu.site_role|default('passerby') %}<span class="role-badge role-badge--{{ _role|lower }}" title="{{ _role|capitalize }}">★</span></div>
               <div class="profile-menu__email">{{ cu.email or '' }}</div>
+              {% set invites = get_classroom_invites(cu) if cu else [] %}
+              {% if invites and invites|length > 0 %}
+                <div class="profile-menu__invites"><a href="/notifications">Classroom Invites ({{ invites|length }})</a></div>
+              {% endif %}
             </div>
           </div>
           <a class="profile-menu__item" href="{{ url_for('profile_view', username=cu.username) }}">View Profile</a>
@@ -56,19 +60,12 @@
       {% else %}
         <div class="nav-links-right">
           <a class="nav-link small" href="{{ url_for('about') }}">About us</a>
-<<<<<<< HEAD
-          <a class="nav-link small" href="{{ url_for('login') }}">Log in</a>
-          <a class="nav-link btn" href="{{ url_for('register') }}">Start</a>
-        </div>
-      {% endif %}
-      <button id="theme-toggle" aria-label="Coffee mode" class="icon-btn">☕ Coffee</button>
-=======
           <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
           <a class="nav-link small" href="{{ url_for('login') }}">Sign in</a>
           <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
         </div>
       {% endif %}
->>>>>>> 0b92d6c (Commit local UI and model changes)
+      <button id="theme-toggle" aria-label="Coffee mode" class="icon-btn">☕ Coffee</button>
     </nav>
   </div>
 </header>

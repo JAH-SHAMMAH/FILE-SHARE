@@ -165,6 +165,7 @@ class ClassroomMessage(SQLModel, table=True):
     sender_id: int = Field(foreign_key="user.id")
     content: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    __table_args__ = {"extend_existing": True}
 
 
 class Bookmark(SQLModel, table=True):
@@ -275,12 +276,6 @@ class StudentAnalytics(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class ClassroomMessage(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    classroom_id: int = Field(foreign_key="classroom.id")
-    sender_id: int = Field(foreign_key="user.id")
-    content: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ConsentLog(SQLModel, table=True):

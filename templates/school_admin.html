@@ -19,7 +19,7 @@
               <tbody>
                 {% for m in c.members %}
                   <tr>
-                    <td>{{ m.username or m.user_id }}</td>
+                    <td>{% if m.username %}<span>{{ m.username }}</span> <span class="role-badge role-badge--passerby">★</span>{% else %}{{ m.user_id }} <span class="role-badge role-badge--passerby">★</span>{% endif %}</td>
                     <td>{{ m.role }}</td>
                     <td>
                       <form method="post" action="/schools/{{ school.id }}/admin/role" class="role-form">

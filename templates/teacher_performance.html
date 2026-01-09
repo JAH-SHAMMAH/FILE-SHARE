@@ -4,41 +4,23 @@
 
 {% block content %}
   <div class="content-card">
+    {% if request.query_params.get('success') %}
+      <div style="padding:10px;background:linear-gradient(90deg,#ecfccb,#bbf7d0);border:1px solid #d1fae5;border-radius:10px;margin-bottom:12px;color:#064e3b;font-weight:700;">{{ request.query_params.get('success') }}</div>
+    {% elif request.query_params.get('notice') %}
+      <div style="padding:10px;background:#fff7ed;border:1px solid #ffedd5;border-radius:10px;margin-bottom:12px;color:#92400e;font-weight:700;">{{ request.query_params.get('notice') }}</div>
+    {% elif request.query_params.get('error') %}
+      <div style="padding:10px;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;margin-bottom:12px;color:#991b1b;font-weight:700;">{{ request.query_params.get('error') }}</div>
+    {% endif %}
     <h1 style="margin-bottom:8px;">Teacher performance — {{ classroom.name }}</h1>
     <p class="muted" style="margin-bottom:12px;">Overview of activity across teachers and students in this classroom.</p>
-    <p style="margin-bottom:12px;">
+    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/library">Back to classroom</a>
-      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance.csv" style="margin-left:8px;">Download CSV</a>
-      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance/students" style="margin-left:8px;">Student metrics (JSON)</a>
-    </p>
+      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance.csv">Download CSV</a>
+      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance/students">Student metrics (JSON)</a>
+      <div style="margin-left:auto;color:var(--muted);font-size:13px;">Teachers: <strong style="color:var(--text);">{{ teachers|length if teachers else 0 }}</strong></div>
+    </div>
 
     {% if teachers %}
-<<<<<<< HEAD
-      <table>
-        <thead><tr><th>Teacher</th><th>Assignments Created</th><th>Materials Uploaded</th><th>Submissions Received</th></tr></thead>
-        <tbody>
-          {% for t in teachers %}
-          <tr>
-            <td>
-              {{ t.username or t.user_id }}
-              {% if t.site_role == 'teacher' %}
-                <span title="Teacher" style="color:#2563eb;">★</span>
-              {% elif t.site_role == 'student' %}
-                <span title="Student" style="color:#f59e0b;">★</span>
-              {% elif t.site_role == 'individual' %}
-                <span title="Individual" style="color:#dc2626;">★</span>
-              {% elif t.site_role == 'passerby' %}
-                <span title="Passerby" style="color:#111827;">★</span>
-              {% endif %}
-            </td>
-            <td>{{ t.assignments_count }}</td>
-            <td>{{ t.uploads_count }}</td>
-            <td>{{ t.submissions_count }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-=======
       <div style="overflow-x:auto;">
         <table class="data-table" style="width:100%;border-collapse:collapse;font-size:14px;">
           <thead>
@@ -52,7 +34,7 @@
           <tbody>
             {% for t in teachers %}
             <tr>
-              <td style="padding:8px;border-bottom:1px solid var(--border);">{{ t.username or t.user_id }}</td>
+              <td style="padding:8px;border-bottom:1px solid var(--border);">{% set role = (t.site_role if t.site_role is defined else 'teacher')|default('teacher')|lower %}{{ t.username or t.user_id }} <span class="role-badge role-badge--{{ role }}">★</span></td>
               <td style="padding:8px;border-bottom:1px solid var(--border);text-align:right;">{{ t.assignments_count }}</td>
               <td style="padding:8px;border-bottom:1px solid var(--border);text-align:right;">{{ t.uploads_count }}</td>
               <td style="padding:8px;border-bottom:1px solid var(--border);text-align:right;">{{ t.submissions_count }}</td>
@@ -61,13 +43,14 @@
           </tbody>
         </table>
       </div>
->>>>>>> 0b92d6c (Commit local UI and model changes)
     {% else %}
       <p class="muted">No teachers found for this classroom.</p>
     {% endif %}
 
     <h2 style="margin-top:18px;">Per-student engagement</h2>
-    <div id="student-chart" style="margin-top:8px;"></div>
+    <div id="student-chart" style="margin-top:8px;min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+      <div>Loading student metrics…</div>
+    </div>
   </div>
 
   <script>
@@ -76,7 +59,7 @@
         const res = await fetch('/api/classrooms/{{ classroom.id }}/performance/students');
         const j = await res.json();
         const el = document.getElementById('student-chart');
-        if(!j.students || j.students.length===0){ el.innerText='No student metrics'; return }
+        if(!j.students || j.students.length===0){ el.innerHTML='<div class="muted">No student metrics</div>'; return }
         let html = '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr>' +
           '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);">Student</th>' +
           '<th style="text-align:right;padding:8px;border-bottom:1px solid var(--border);">Submissions</th>' +

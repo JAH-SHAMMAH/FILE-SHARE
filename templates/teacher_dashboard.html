@@ -21,22 +21,18 @@
         {% for cls in classrooms %}
           <article class="card" style="background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 12px 28px rgba(15,23,42,0.12);">
             <h2 style="margin:0 0 6px 0;font-size:18px;">{{ cls.name }}</h2>
-            <p class="muted" style="margin:0 0 10px 0;">Classroom ID: {{ cls.id }}</p>
             <dl style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:14px;">
               <dt class="muted">Students</dt><dd>{{ cls.student_count }}</dd>
               <dt class="muted">Assignments</dt><dd>{{ cls.assignment_count }}</dd>
               <dt class="muted">Submissions</dt><dd>{{ cls.submission_count }}</dd>
             </dl>
             <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;">
-<<<<<<< HEAD
               <a class="btn" href="/classrooms/{{ cls.id }}/view" style="padding:8px 10px;font-size:13px;border-radius:999px;background:#111827;color:#f9fafb;text-decoration:none;">View classroom</a>
-=======
-              <a class="btn" href="/classrooms/{{ cls.id }}/library#class-chat" style="padding:8px 10px;font-size:13px;border-radius:999px;background:#111827;color:#f9fafb;text-decoration:none;">View classroom</a>
+              <a class="btn" href="/classrooms/{{ cls.id }}/library#class-chat" style="padding:8px 10px;font-size:13px;border-radius:999px;background:#111827;color:#f9fafb;text-decoration:none;">Open chat</a>
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/performance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class analytics</a>
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/library" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class library</a>
->>>>>>> 0b92d6c (Commit local UI and model changes)
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/attendance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Attendance</a>
-              <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/performance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class analytics</a>
+              
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/invite" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Invite students</a>
             </div>
             <form method="post" action="/classrooms/{{ cls.id }}/invite-by-username" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">

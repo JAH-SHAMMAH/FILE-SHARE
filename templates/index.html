@@ -204,15 +204,7 @@
             </div>
             <div class="card__body">
               <h4>{{ pres.title }}</h4>
-              <p class="muted">by {% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
-<<<<<<< HEAD
-              <p class="muted" style="margin-top:4px; font-size:13px;">{{ pres.views or 0 }} views</p>
-            </div>
-          </a>
-          <button class="card__bookmark" type="button" data-id="{{ pres.id }}" aria-label="Save presentation" title="Save for later">
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
-          </button>
-=======
+              <p class="muted">by&nbsp;{% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a> <span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
               <p class="muted" style="margin-top:6px;">
                 <strong>{{ pres.owner_presentation_count or 0 }}</strong> presentations ·
                 <strong>{{ pres.views or 0 }}</strong> views ·
@@ -221,7 +213,6 @@
               </p>
             </div>
           </a>
->>>>>>> 0b92d6c (Commit local UI and model changes)
         </article>
         {% else %}
         <p class="muted">No uploads yet. Be the first to <a href="{{ url_for('upload') }}">upload</a>.</p>
