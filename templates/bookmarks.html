@@ -13,7 +13,7 @@
         <a class="card__link" href="/presentations/{{ p.id }}">
           <div class="card__thumb">
             {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
-            {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
+            {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0?v=' ~ (p.filename or p.id) %}
             {% if is_pdf %}
               <iframe class="thumb-frame" src="/download/{{ p.filename }}?inline=1#page=1&view=FitH&toolbar=0&navpanes=0" loading="lazy"></iframe>
             {% else %}

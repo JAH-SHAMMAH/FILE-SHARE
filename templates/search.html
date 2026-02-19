@@ -67,7 +67,7 @@
     {% for r in results %}
     <article class="card card--wide search-card" data-pid="{{ r.id }}">
       {% set is_pdf = r.filename and r.filename.lower().endswith('.pdf') %}
-      {% set slide_thumb = '/media/thumbs/' ~ r.id ~ '/slide_0.png' %}
+      {% set slide_thumb = '/presentations/' ~ r.id ~ '/slide/0?v=' ~ (r.filename or r.id) %}
       {% set thumb_pdf = '/download/' ~ r.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
       {% set cover_or_pdf = (r.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
 

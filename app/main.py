@@ -183,6 +183,25 @@ def public_media_url(value: Optional[str]) -> Optional[str]:
     cleaned = s.replace("\\", "/").lstrip("./").lstrip("/")
     return f"/media/{cleaned}"
 
+
+def _reset_presentation_preview_artifacts(presentation_id: int) -> None:
+    pid = int(presentation_id)
+    base_dir = Path(UPLOAD_DIR)
+    for stale_dir in (base_dir / "thumbs" / str(pid), base_dir / "thumbs_hd" / str(pid)):
+        try:
+            if stale_dir.exists():
+                shutil.rmtree(stale_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    try:
+        redis_url = os.getenv("REDIS_URL")
+        if _redis and redis_url:
+            rc = _redis.from_url(redis_url)
+            rc.delete(f"presentation:{pid}:thumbnails")
+    except Exception:
+        pass
+
 try:
     templates.env.filters['public_media_url'] = public_media_url
 except Exception:
@@ -6840,6 +6859,9 @@ async def upload_post(
             session.commit()
             session.refresh(p)
 
+            # Ensure stale preview artifacts from previous deployments/IDs are cleared.
+            _reset_presentation_preview_artifacts(p.id)
+
             # handle tags (comma-separated)
             if tags:
                 tag_names = [t.strip() for t in tags.split(",") if t.strip()]
@@ -7027,6 +7049,9 @@ async def api_upload(
         session.add(p)
         session.commit()
         session.refresh(p)
+
+        # Ensure stale preview artifacts from previous deployments/IDs are cleared.
+        _reset_presentation_preview_artifacts(p.id)
 
         # optional tags
         if tags:
@@ -7952,6 +7977,31 @@ def get_slide_image(
     target_dir = (thumbs_hd_dir / quality_bucket) if hd else thumbs_dir
     path = target_dir / f"slide_{index}.png"
     fallback_path = thumbs_dir / f"slide_{index}.png"
+
+    # Guard against stale thumbnails (e.g., reused presentation IDs across deploys).
+    try:
+        with Session(engine) as session:
+            p = session.get(Presentation, presentation_id)
+            src_mtime = None
+            if p and getattr(p, "filename", None):
+                src = Path(UPLOAD_DIR) / p.filename
+                if src.exists():
+                    src_mtime = src.stat().st_mtime
+
+        if src_mtime is not None:
+            try:
+                if path.exists() and path.stat().st_mtime < src_mtime:
+                    path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            try:
+                if fallback_path.exists() and fallback_path.stat().st_mtime < src_mtime:
+                    fallback_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     if not path.exists():
         # Attempt to generate the requested slide on-demand from an available PDF.
         # Prefer a converted PDF (from ConversionJob.result), then the original upload.
