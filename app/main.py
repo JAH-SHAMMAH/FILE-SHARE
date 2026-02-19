@@ -5070,7 +5070,7 @@ def featured_page(request: Request):
             select(Presentation)
             .where(visibility)
             .options(selectinload(Presentation.owner), selectinload(Presentation.category))
-            .order_by(Presentation.views.desc())
+            .order_by(Presentation.created_at.desc(), Presentation.views.desc())
             .limit(12)
         ).all()
         trending = [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in trending_rows]
