@@ -5037,6 +5037,67 @@ html, body { overflow-x: hidden; }
   display: block !important;
 }
 
+/* Final mobile safeguards (kept at file end to override earlier duplicate rules) */
+@media (max-width: 768px) {
+  html, body { overflow-x: hidden !important; }
+
+  .site-header .container.header-inner {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .site-header .header-search {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .site-header .header-search input {
+    min-width: 0 !important;
+  }
+
+  .site-header .header-nav {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .site-header .header-nav .nav-cta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    gap: 6px !important;
+  }
+
+  .site-header .header-nav .nav-link,
+  .site-header .header-nav .btn {
+    font-size: 14px !important;
+    padding: 8px 10px !important;
+    white-space: normal !important;
+  }
+
+  .site-header .header-nav .nav-link.btn {
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  .profile-menu {
+    right: 0 !important;
+    left: auto !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .container.presentation-detail .presentation-layout.presentation-layout--viewer .presentation-main-viewer,
+  .container.presentation-detail .presentation-layout.presentation-layout--viewer .main-viewer {
+    min-height: 260px !important;
+    height: 56vh !important;
+    max-height: 70vh !important;
+  }
+}
+
 
 
 
