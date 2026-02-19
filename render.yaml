@@ -48,4 +48,7 @@ services:
   - type: redis
     name: file-share-redis
     plan: starter
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: allow all
     maxmemoryPolicy: allkeys-lru
