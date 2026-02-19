@@ -5200,6 +5200,58 @@ html, body { overflow-x: hidden; }
   }
 }
 
+/* Featured/feed phone compaction */
+@media (max-width: 640px) {
+  .site-header .header-nav,
+  .site-header .header-nav .nav-cta {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .site-header .header-nav::-webkit-scrollbar,
+  .site-header .header-nav .nav-cta::-webkit-scrollbar {
+    display: none;
+  }
+
+  .feed-row.scroll-row__track > article.card,
+  .feed-row.scroll-row__track > article.card--wide {
+    min-width: 86vw !important;
+    flex: 0 0 86vw !important;
+  }
+
+  .feed-row .feed-card__title {
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+  }
+
+  .feed-row .feed-byline,
+  .feed-row .feed-byline__inline {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .feed-row .card__meta {
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .feed-row .card__actions {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+  }
+
+  .feed-row .card__actions .btn-contact {
+    display: none !important;
+  }
+
+  .feed-row .card__actions .preview-btn {
+    width: 100% !important;
+  }
+}
+
 
 
 

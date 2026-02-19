@@ -26,7 +26,7 @@
           <div class="card__thumb">
             {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0?v=' ~ (pres.filename or pres.id) %}
             {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
-            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
           </div>
           <div class="card__body">
             <h4 class="feed-card__title">{{ pres.title }}</h4>
@@ -70,7 +70,7 @@
           <div class="card__thumb">
             {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0?v=' ~ (pres.filename or pres.id) %}
             {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
-            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
           </div>
           <div class="card__body">
             <h4 class="feed-card__title">{{ pres.title }}</h4>
@@ -117,7 +117,7 @@
             <div class="card__thumb">
               {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0?v=' ~ (pres.filename or pres.id) %}
               {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
-              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
             </div>
             <div class="card__body">
               <h4 class="feed-card__title">{{ pres.title }}</h4>
@@ -161,7 +161,7 @@
           <div class="card__thumb">
             {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0?v=' ~ (pres.filename or pres.id) %}
             {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
-            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
           </div>
           <div class="card__body">
             <h4 class="feed-card__title">{{ pres.title }}</h4>
