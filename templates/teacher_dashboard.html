@@ -8,8 +8,8 @@
     <p class="muted" style="margin-bottom:20px;">Quick overview of your classrooms, students, and activity.</p>
 
     <div class="card" style="background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 10px 22px rgba(15,23,42,0.10);margin-bottom:18px;">
-      <h2 style="margin:0 0 6px 0;font-size:16px;">Create a new classroom</h2>
-      <p class="muted" style="margin:0 0 10px 0;font-size:14px;">Think of this as a group space where you and multiple students can share materials and updates.</p>
+      <h2 style="margin:0 0 6px 0;font-size:16px;color:#111827;">Create a new classroom</h2>
+      <p style="margin:0 0 10px 0;font-size:14px;color:#334155;">Think of this as a group space where you and multiple students can share materials and updates.</p>
       <form method="post" action="/classrooms/new" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;">
         <input name="name" required placeholder="e.g. Year 8 – Physics" style="flex:1;min-width:180px;padding:8px 10px;border-radius:999px;border:1px solid var(--border);font-size:14px;" />
         <button class="btn" type="submit" style="padding:8px 14px;font-size:14px;border-radius:999px;">Create classroom</button>
@@ -32,16 +32,14 @@
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/performance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class analytics</a>
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/library" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Class library</a>
               <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/attendance" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Attendance</a>
-              
-              <a class="btn btn--ghost" href="/classrooms/{{ cls.id }}/invite" style="padding:8px 10px;font-size:13px;border-radius:999px;border:1px solid var(--border);text-decoration:none;">Invite students</a>
             </div>
             <form method="post" action="/classrooms/{{ cls.id }}/invite-by-username" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
               <input type="text" name="username" placeholder="Invite student by username" style="flex:1;min-width:160px;padding:6px 8px;border-radius:999px;border:1px solid var(--border);font-size:13px;" />
               <button class="btn btn--ghost" type="submit" style="padding:6px 10px;font-size:13px;border-radius:999px;">Send invite</button>
             </form>
             <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">
-              <a class="btn btn--ghost" href="https://zoom.us/start/videomeeting" target="_blank" rel="noopener noreferrer" style="padding:6px 10px;font-size:13px;border-radius:999px;">Start Zoom class</a>
-              <a class="btn btn--ghost" href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" style="padding:6px 10px;font-size:13px;border-radius:999px;">Start Google Meet call</a>
+              <button class="btn btn--ghost" type="button" data-space-meeting-start="{{ cls.id }}" data-space-name="{{ cls.name }}" style="padding:6px 10px;font-size:13px;border-radius:999px;">Start space meeting</button>
+              <button class="btn btn--ghost" type="button" data-space-meeting-join="{{ cls.id }}" data-space-name="{{ cls.name }}" style="padding:6px 10px;font-size:13px;border-radius:999px;">Join space meeting</button>
             </div>
           </article>
         {% endfor %}

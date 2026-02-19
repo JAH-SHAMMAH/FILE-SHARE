@@ -16,7 +16,7 @@ def humanize_comment_date(dt: datetime) -> str:
         hours = int(seconds // 3600)
         return f"{hours} hour{'s' if hours != 1 else ''} ago"
     elif seconds < 172800:
-        return "Yesterday"
+        return "Yesterday"  
     elif dt.year == now.year:
         return dt.strftime("%b %d")
     else:

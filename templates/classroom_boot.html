@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Boot students — {{ classroom.name }}{% endblock %}
+
+{% block content %}
+<section class="container" style="max-width:980px;margin-top:18px;">
+  <div class="content-card" style="padding:18px;">
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+      <div>
+        <h1 style="margin:0 0 6px 0;">Boot students</h1>
+        <p class="muted" style="margin:0;">Remove one or more students from {{ classroom.name }}.</p>
+      </div>
+      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/view">Back to classroom</a>
+    </div>
+
+    {% if error == 'empty' %}
+      <div class="alert alert-error" style="margin-top:12px;">Please enter at least one username.</div>
+    {% endif %}
+
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr;gap:16px;">
+      <form method="post" action="/classrooms/{{ classroom.id }}/boot" class="content-card" style="padding:14px;border:1px solid var(--border);">
+        <label class="field" style="display:block;">
+          <div style="font-weight:600;margin-bottom:6px;">Student usernames</div>
+          <textarea name="usernames" id="boot-usernames" rows="4" placeholder="e.g. jane, john_doe" style="width:100%;"></textarea>
+          <div class="muted" style="font-size:13px;margin-top:6px;">Separate multiple usernames with commas or new lines.</div>
+        </label>
+        <input type="hidden" name="csrf_token" id="boot_csrf" value="" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+          <button type="submit" class="btn" id="boot-submit">Boot selected</button>
+        </div>
+      </form>
+
+      <div class="content-card" style="padding:14px;border:1px solid var(--border);">
+        <h3 style="margin:0 0 8px 0;">Current students</h3>
+        {% if students and students|length %}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            {% for s in students %}
+              {% if s.username %}
+              <button type="button" class="btn btn--ghost boot-chip" data-username="{{ s.username }}" style="padding:6px 10px;font-size:13px;">{{ s.username }}</button>
+              {% else %}
+              <span class="muted" style="font-size:13px;">User #{{ s.user_id }}</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <p class="muted" style="font-size:13px;margin-top:10px;">Click a name to add it to the boot list.</p>
+        {% else %}
+          <p class="muted">No students found.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  const field = document.getElementById('boot-usernames');
+  const csrfField = document.getElementById('boot_csrf');
+  const chips = document.querySelectorAll('.boot-chip');
+
+  function getCookie(name){
+    const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+    return v ? decodeURIComponent(v.pop()) : '';
+  }
+
+  if (csrfField) {
+    try { csrfField.value = getCookie('csrf_token') || ''; } catch (e) {}
+  }
+
+  function addUsername(name){
+    if (!field || !name) return;
+    const current = field.value.trim();
+    const parts = current ? current.split(/\s*,\s*|\s+\n|\n|\r\n/).filter(Boolean) : [];
+    if (parts.includes(name)) return;
+    parts.push(name);
+    field.value = parts.join(', ');
+    field.focus();
+  }
+
+  chips.forEach(btn => {
+    btn.addEventListener('click', () => addUsername(btn.dataset.username));
+  });
+})();
+</script>
+{% endblock %}

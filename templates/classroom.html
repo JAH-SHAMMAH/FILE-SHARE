@@ -1,19 +1,19 @@
 {% extends 'base.html' %}
-{% block title %}{{ classroom.name }} — Classroom{% endblock %}
+{% block title %}{{ classroom.name }} — Space{% endblock %}
 
 {% block content %}
   <section class="container" style="margin-top:18px;max-width:980px;">
-    <div id="classroom-meta" data-room-id="{{ classroom.id }}" style="display:none"></div>
+    <div id="classroom-meta" data-room-id="{{ classroom.id }}" data-space-name="{{ classroom.name }}" data-role="{{ member_role if member_role else '' }}" data-my-id="{{ request.state.current_user.id if request.state and request.state.current_user else '' }}" style="display:none"></div>
     <header style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
       <div>
         <h1 class="section-title" style="margin:0 0 4px 0;">{{ classroom.name }}</h1>
-        <p class="muted" style="margin:0;">Group chat space for this classroom, plus materials and tools.</p>
+        <p class="muted" style="margin:0;">Group chat space for this space, plus materials and tools.</p>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if member and member_role in ['teacher','admin'] %}
         <button id="teacher-menu-toggle" class="btn btn--ghost" style="padding:6px 10px;font-size:14px;display:inline-flex;align-items:center;gap:6px;" onclick="(function(){var p=document.getElementById('teacher-tools-panel');if(!p)return;p.style.display=(p.style.display==='none'?'block':'none');})();">
           <span style="display:inline-block;width:16px;height:2px;background:currentColor;box-shadow:0 5px 0 currentColor,0 -5px 0 currentColor;"></span>
-          <span>Teacher tools</span>
+          <span>Space tools</span>
         </button>
         {% endif %}
         {% if member and member_role == 'student' %}
@@ -34,7 +34,7 @@
     <div id="members-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.25);z-index:1000;align-items:center;justify-content:center;">
       <div style="background:#fff;padding:24px 28px;border-radius:12px;max-width:400px;width:90vw;box-shadow:0 4px 24px rgba(0,0,0,0.12);position:relative;">
         <button id="close-members-modal" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:20px;cursor:pointer;">&times;</button>
-        <h3 style="margin-top:0;">Classroom Members</h3>
+        <h3 style="margin-top:0;">Space Members</h3>
         <div id="members-list" style="margin-top:12px;min-height:40px;text-align:left;font-size:15px;">
           Loading...
         </div>
@@ -43,11 +43,18 @@
 
     {% if member and member_role in ['teacher','admin'] %}
     <section class="content-card" id="teacher-tools-panel" style="margin-bottom:14px;padding:10px 12px;display:none;">
-      <h2 style="margin:0 0 6px 0;font-size:14px;">Teacher tools</h2>
+      <h2 style="margin:0 0 6px 0;font-size:14px;">Space tools</h2>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/library" style="padding:6px 10px;font-size:13px;">Upload material</a>
-        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/assignments" style="padding:6px 10px;font-size:13px;">Assignments</a>
-        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/boot" style="padding:6px 10px;font-size:13px;">Boot students</a>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/view" style="padding:6px 10px;font-size:13px;">Space overview</a>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/library" style="padding:6px 10px;font-size:13px;">Upload material</a>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/assignments" style="padding:6px 10px;font-size:13px;">Assignments</a>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/attendance" style="padding:6px 10px;font-size:13px;">Attendance</a>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/performance" style="padding:6px 10px;font-size:13px;">Space analytics</a>
+        <button class="btn btn--ghost" id="teacher-invite-btn" type="button" style="padding:6px 10px;font-size:13px;">Invite student</button>
+        <button class="btn btn--ghost" id="teacher-code-btn" type="button" style="padding:6px 10px;font-size:13px;">Share join code</button>
+        <button class="btn btn--ghost" id="teacher-copy-link" type="button" style="padding:6px 10px;font-size:13px;">Copy space link</button>
+        <button class="btn btn--ghost" id="teacher-view-members" type="button" style="padding:6px 10px;font-size:13px;">View members</button>
+        <a class="btn btn--ghost" href="/spaces/{{ classroom.id }}/boot" style="padding:6px 10px;font-size:13px;">Boot members</a>
       </div>
     </section>
     {% endif %}
@@ -58,21 +65,29 @@
         <div id="classroom-chat-messages" style="display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:260px;max-height:420px;overflow-y:auto;margin-top:6px;padding:8px 6px;border-radius:10px;border:1px solid var(--border);background:var(--surface-soft);">
           {% if messages %}
             {% for m in messages %}
-              {% set role = (m.site_role|default('passerby'))|lower %}
-              <div class="chat-msg {{ 'me' if current_user and current_user.id == m.sender_id else 'other' }}">
-                <div class="chat-msg__text">
-                  <div style="font-weight:600">{{ m.username or ('User #' ~ m.sender_id) }} <span class="role-badge role-badge--{{ role }}">★</span></div>
-                  <div>{{ m.content }}</div>
+              {% if m.content and m.content.startswith('[system]') %}
+                <div class="chat-system">{{ m.content.replace('[system]', '').strip() }}</div>
+              {% else %}
+                {% set role = (m.site_role|default('passerby'))|lower %}
+                <div class="chat-msg {{ 'me' if current_user and current_user.id == m.sender_id else 'other' }}">
+                  <div class="chat-msg__text">
+                    <div style="font-weight:600">{{ m.username or ('User #' ~ m.sender_id) }} <span class="role-badge role-badge--{{ role }}">★</span></div>
+                    <div>{{ m.content }}</div>
+                  </div>
                 </div>
-              </div>
+              {% endif %}
             {% endfor %}
           {% else %}
             <div class="muted">No messages yet.</div>
           {% endif %}
         </div>
+        <div class="chat-status" style="padding:6px 4px 0 4px;">
+          <div id="classroom-typing" class="chat-typing" style="display:none;"></div>
+          <div id="classroom-read-state" class="chat-read"></div>
+        </div>
 
         <form id="class-chat-form" class="chat-form" style="margin-top:8px;display:flex;gap:8px;">
-          <input id="class-chat-input" type="text" placeholder="Write a message to the class…" autocomplete="off" style="flex:1;" />
+          <input id="class-chat-input" type="text" placeholder="Write a message to the space…" autocomplete="off" style="flex:1;" />
           <button class="btn" type="submit">Send</button>
         </form>
 
@@ -93,20 +108,38 @@
           const msgBox = document.getElementById('classroom-chat-messages');
           const form = document.getElementById('class-chat-form');
           const input = document.getElementById('class-chat-input');
+          const typingEl = document.getElementById('classroom-typing');
+          const readEl = document.getElementById('classroom-read-state');
+          const meIdAttr = document.getElementById('classroom-meta')?.getAttribute('data-my-id');
+          const meId = meIdAttr ? parseInt(meIdAttr) : null;
+          let classSocket = null;
+          let lastMessageId = null;
+          let lastSeenId = null;
+          let typingTimer = null;
+          let isTyping = false;
+          const typingUsers = new Map();
+          const seenUsers = new Map();
 
           if (!classroomId || !msgBox || !form || !input) return;
 
           async function loadChat(){
             try{
-              const res = await fetch(`/api/classrooms/${classroomId}/chat/messages`);
+              const res = await fetch(`/api/spaces/${classroomId}/chat/messages`);
               if(!res.ok) return;
               const data = await res.json();
               msgBox.innerHTML = '';
-              const meIdAttr = document.body.getAttribute('data-my-id') || document.getElementById('current-user')?.getAttribute('data-my-id');
-              const meId = meIdAttr ? parseInt(meIdAttr) : null;
+              lastMessageId = null;
               (data.messages || []).forEach(m => {
+                if (m.content && m.content.startsWith('[system]')){
+                  const sys = document.createElement('div');
+                  sys.className = 'chat-system';
+                  sys.textContent = m.content.replace('[system]', '').trim();
+                  msgBox.appendChild(sys);
+                  return;
+                }
                 const row = document.createElement('div');
                 row.className = 'chat-msg ' + (meId && m.sender_id === meId ? 'me' : 'other');
+                row.dataset.messageId = m.id;
                 const inner = document.createElement('div');
                 inner.className = 'chat-msg__text';
                 const header = document.createElement('div');
@@ -127,8 +160,12 @@
                 const body = document.createElement('div'); body.textContent = m.content; body.style.marginTop = '4px';
                 inner.appendChild(header); inner.appendChild(body);
                 row.appendChild(inner); msgBox.appendChild(row);
+                lastMessageId = m.id;
               });
               msgBox.scrollTop = msgBox.scrollHeight;
+              seenUsers.clear();
+              updateSeenState();
+              await sendSeen();
             }catch(e){ /* ignore */ }
           }
 
@@ -137,7 +174,7 @@
             const val = input.value.trim();
             if(!val) return;
             try{
-              const res = await fetch(`/api/classrooms/${classroomId}/chat/messages`, {
+              const res = await fetch(`/api/spaces/${classroomId}/chat/messages`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: val })
               });
               if(res.ok){ input.value = ''; await loadChat(); }
@@ -146,6 +183,204 @@
 
           loadChat(); setInterval(loadChat, 5000);
 
+          function updateTypingText(){
+            if (!typingEl) return;
+            const names = Array.from(typingUsers.values()).filter(Boolean);
+            if (!names.length){ typingEl.textContent = ''; typingEl.style.display = 'none'; return; }
+            if (names.length === 1){ typingEl.textContent = `${names[0]} is typing…`; }
+            else { typingEl.textContent = `${names.length} people are typing…`; }
+            typingEl.style.display = 'block';
+          }
+
+          function updateSeenState(){
+            if (!readEl) return;
+            const names = Array.from(seenUsers.values()).filter(Boolean);
+            if (!names.length){ readEl.textContent = ''; return; }
+            const label = names.length === 1 ? names[0] : `${names.length} people`;
+            readEl.textContent = `Seen by ${label}`;
+          }
+
+          async function sendSeen(){
+            if (!lastMessageId || lastMessageId === lastSeenId) return;
+            lastSeenId = lastMessageId;
+            try{ await fetch(`/api/spaces/${classroomId}/chat/seen`, { method: 'POST' }); }catch(e){}
+            if (classSocket && classSocket.readyState === 1){
+              try{ classSocket.send(JSON.stringify({ type: 'seen', message_id: lastMessageId })); }catch(e){}
+            }
+          }
+
+          function sendTyping(status){
+            if (!classSocket || classSocket.readyState !== 1) return;
+            try{ classSocket.send(JSON.stringify({ type: 'typing', status })); }catch(e){}
+          }
+
+          function connectClassSocket(){
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            const url = proto + '://' + location.host + `/ws/spaces/${classroomId}`;
+            try{ classSocket = new WebSocket(url); }catch(e){ classSocket = null; return; }
+            classSocket.addEventListener('message', (ev) => {
+              let data; try{ data = JSON.parse(ev.data); }catch(e){ return; }
+              if (data.type === 'typing'){
+                if (meId && data.user_id === meId) return;
+                if (data.status === 'start'){
+                  typingUsers.set(String(data.user_id), data.username || 'Someone');
+                  updateTypingText();
+                  setTimeout(() => {
+                    typingUsers.delete(String(data.user_id));
+                    updateTypingText();
+                  }, 2500);
+                } else {
+                  typingUsers.delete(String(data.user_id));
+                  updateTypingText();
+                }
+              } else if (data.type === 'seen'){
+                if (meId && data.user_id === meId) return;
+                if (data.message_id && lastMessageId && data.message_id !== lastMessageId) return;
+                seenUsers.set(String(data.user_id), data.username || 'Someone');
+                updateSeenState();
+              }
+            });
+          }
+
+          connectClassSocket();
+
+          input?.addEventListener('input', function(){
+            if (!isTyping){
+              isTyping = true;
+              sendTyping('start');
+            }
+            if (typingTimer) clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+              isTyping = false;
+              sendTyping('stop');
+            }, 1200);
+          });
+
+          input?.addEventListener('blur', function(){
+            if (isTyping){
+              isTyping = false;
+              sendTyping('stop');
+            }
+          });
+
+          // Teacher tools: invite, share code, copy link, view members
+          const inviteBtn = document.getElementById('teacher-invite-btn');
+          const codeBtn = document.getElementById('teacher-code-btn');
+          const copyLinkBtn = document.getElementById('teacher-copy-link');
+          const viewMembersTeacherBtn = document.getElementById('teacher-view-members');
+          const modalBackdrop = document.getElementById('classroom-modal-backdrop');
+          const modalTitle = document.getElementById('classroom-modal-title');
+          const modalBody = document.getElementById('classroom-modal-body');
+          const modalClose = document.getElementById('classroom-modal-close');
+
+          function showModal(title, html){
+            if (!modalBackdrop || !modalTitle || !modalBody) return;
+            modalTitle.textContent = title || '';
+            modalBody.innerHTML = html || '';
+            modalBackdrop.style.display = 'block';
+            modalBackdrop.classList.add('show');
+          }
+          function closeModal(){
+            if (!modalBackdrop) return;
+            modalBackdrop.style.display = 'none';
+            modalBackdrop.classList.remove('show');
+          }
+          if (modalClose) modalClose.addEventListener('click', closeModal);
+          if (modalBackdrop) modalBackdrop.addEventListener('click', (e)=>{ if (e.target === modalBackdrop) closeModal(); });
+
+          function notify(msg, type){
+            if (typeof showToast === 'function') showToast(msg, type || 'info');
+            else alert(msg);
+          }
+
+          if (inviteBtn){
+            inviteBtn.addEventListener('click', ()=>{
+              showModal('Invite student', `
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input id="invite-username" placeholder="Student username" style="flex:1;min-width:180px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);" />
+                  <button class="btn" id="invite-submit" type="button">Send invite</button>
+                </div>
+                <p class="muted" style="margin-top:8px;font-size:12px;">Students will receive a notification to accept.</p>
+              `);
+              const submit = document.getElementById('invite-submit');
+              submit?.addEventListener('click', async ()=>{
+                const username = (document.getElementById('invite-username')?.value || '').trim();
+                if (!username) return notify('Enter a username', 'error');
+                try{
+                  const res = await fetch(`/api/spaces/${classroomId}/invite`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                  });
+                  if (!res.ok){
+                    const j = await res.json().catch(()=>({detail:'Invite failed'}));
+                    return notify(j.detail || 'Invite failed', 'error');
+                  }
+                  const j = await res.json().catch(()=>({message:'Invite sent'}));
+                  notify(j.message || 'Invite sent', 'success');
+                  closeModal();
+                }catch(e){ notify('Network error', 'error'); }
+              });
+            });
+          }
+
+          if (codeBtn){
+            codeBtn.addEventListener('click', async ()=>{
+              showModal('Share join code', `
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input id="class-code" readonly style="flex:1;min-width:160px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);font-weight:700;text-align:center;letter-spacing:2px;" value="..." />
+                  <button class="btn btn--ghost" id="copy-code" type="button">Copy</button>
+                  <button class="btn" id="regen-code" type="button">Regenerate</button>
+                </div>
+                <p class="muted" style="margin-top:8px;font-size:12px;">Share this code with students to join.</p>
+              `);
+              const codeInput = document.getElementById('class-code');
+              const copyBtn = document.getElementById('copy-code');
+              const regenBtn = document.getElementById('regen-code');
+
+              async function loadCode(){
+                try{
+                  const res = await fetch(`/api/spaces/${classroomId}/code`);
+                  const j = await res.json();
+                  if (res.ok && codeInput) codeInput.value = j.code || '';
+                }catch(e){ /* ignore */ }
+              }
+              await loadCode();
+
+              copyBtn?.addEventListener('click', async ()=>{
+                try{
+                  await navigator.clipboard.writeText(codeInput?.value || '');
+                  notify('Code copied', 'success');
+                }catch(e){ notify('Copy failed', 'error'); }
+              });
+              regenBtn?.addEventListener('click', async ()=>{
+                try{
+                  const res = await fetch(`/api/spaces/${classroomId}/code/regenerate`, { method: 'POST' });
+                  const j = await res.json();
+                  if (res.ok && codeInput) codeInput.value = j.code || '';
+                  notify('Code regenerated', 'success');
+                }catch(e){ notify('Failed to regenerate', 'error'); }
+              });
+            });
+          }
+
+          if (copyLinkBtn){
+            copyLinkBtn.addEventListener('click', async ()=>{
+              try{
+                const link = `${window.location.origin}/spaces/${classroomId}/view`;
+                await navigator.clipboard.writeText(link);
+                notify('Class link copied', 'success');
+              }catch(e){ notify('Copy failed', 'error'); }
+            });
+          }
+
+          if (viewMembersTeacherBtn){
+            viewMembersTeacherBtn.addEventListener('click', ()=>{
+              const vm = document.getElementById('view-members');
+              vm?.click();
+            });
+          }
+
           // Members modal handlers
           const viewMembersBtn = document.getElementById('view-members');
           const membersModal = document.getElementById('members-modal');
@@ -153,29 +388,40 @@
           const closeMembersBtn = document.getElementById('close-members-modal');
           const leaveBtn = document.getElementById('leave-group');
 
-          if (viewMembersBtn && membersModal && membersList) {
+          async function openMembersModal(){
+            if (!membersModal || !membersList) return;
+            try {
+              membersList.textContent = 'Loading...';
+              const res = await fetch(`/api/spaces/${classroomId}/members`, { credentials: 'include' });
+              if (!res.ok) { membersList.textContent = 'Unable to load members'; return; }
+              const data = await res.json();
+              membersList.innerHTML = '';
+              if (!data.members || !data.members.length) { membersList.textContent = 'No members found'; }
+              else {
+                const ul = document.createElement('ul'); ul.style.listStyle='none'; ul.style.padding='0'; ul.style.margin='0';
+                data.members.forEach(m => {
+                  const li = document.createElement('li'); li.style.padding='6px 0';
+                  const name = document.createElement('span'); name.textContent = m.username || ('User ' + m.user_id); name.style.fontWeight='600'; name.style.marginRight='8px';
+                  const badge = document.createElement('span'); badge.className = 'role-badge role-badge--' + ((m.role||'passerby').toString().toLowerCase()); badge.textContent = '★'; badge.style.marginLeft='6px';
+                  li.appendChild(name); li.appendChild(badge);
+                  ul.appendChild(li);
+                });
+                membersList.appendChild(ul);
+              }
+              membersModal.style.display = 'flex';
+            } catch (e) { membersList.textContent = 'Error loading members'; }
+          }
+
+          if (viewMembersBtn) {
             viewMembersBtn.addEventListener('click', async function(ev){
               ev.preventDefault();
-              try {
-                membersList.textContent = 'Loading...';
-                const res = await fetch(`/api/classrooms/${classroomId}/members`, { credentials: 'include' });
-                if (!res.ok) { membersList.textContent = 'Unable to load members'; return; }
-                const data = await res.json();
-                membersList.innerHTML = '';
-                if (!data.members || !data.members.length) { membersList.textContent = 'No members found'; }
-                else {
-                  const ul = document.createElement('ul'); ul.style.listStyle='none'; ul.style.padding='0'; ul.style.margin='0';
-                  data.members.forEach(m => {
-                    const li = document.createElement('li'); li.style.padding='6px 0';
-                    const name = document.createElement('span'); name.textContent = m.username || ('User ' + m.user_id); name.style.fontWeight='600'; name.style.marginRight='8px';
-                    const badge = document.createElement('span'); badge.className = 'role-badge role-badge--' + ((m.role||'passerby').toString().toLowerCase()); badge.textContent = '★'; badge.style.marginLeft='6px';
-                    li.appendChild(name); li.appendChild(badge);
-                    ul.appendChild(li);
-                  });
-                  membersList.appendChild(ul);
-                }
-                membersModal.style.display = 'flex';
-              } catch (e) { membersList.textContent = 'Error loading members'; }
+              await openMembersModal();
+            });
+          }
+          if (viewMembersTeacherBtn) {
+            viewMembersTeacherBtn.addEventListener('click', async function(ev){
+              ev.preventDefault();
+              await openMembersModal();
             });
           }
 
@@ -187,12 +433,12 @@
           if (leaveBtn) {
             leaveBtn.addEventListener('click', async function(ev){
               ev.preventDefault();
-              if (!confirm('Leave this classroom? You will lose access to materials.')) return;
+              if (!confirm('Leave this space? You will lose access to materials.')) return;
               try {
-                const res = await fetch(`/classrooms/${classroomId}/leave`, { method: 'POST', credentials: 'include' });
-                if (!res.ok) { alert('Unable to leave the classroom'); return; }
-                // on success, redirect to your classrooms
-                window.location.href = '/my/classrooms';
+                const res = await fetch(`/spaces/${classroomId}/leave`, { method: 'POST', credentials: 'include' });
+                if (!res.ok) { alert('Unable to leave the space'); return; }
+                // on success, redirect to your spaces
+                window.location.href = '/spaces';
               } catch (e) { alert('Network error'); }
             });
           }

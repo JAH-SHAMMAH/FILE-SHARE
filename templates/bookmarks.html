@@ -9,19 +9,35 @@
         <div class="empty">You haven't saved any presentations yet.</div>
       {% endif %}
       {% for p in presentations %}
-      <article class="card" data-pid="{{ p.id }}">
-        <a class="card__thumb" href="/presentations/{{ p.id }}">
-          {% if p.filename and p.filename.lower().endswith('.pdf') %}
-            <div class="thumb-frame-thumb" style="height:120px;display:flex;align-items:center;justify-content:center;background:#f7f7f7">PDF</div>
-          {% else %}
-            <img src="/presentations/{{ p.id }}/slide/0" alt="{{ p.title }}" />
-          {% endif %}
+      <article class="featured-card card" data-pid="{{ p.id }}">
+        <a class="card__link" href="/presentations/{{ p.id }}">
+          <div class="card__thumb">
+            {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+            {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
+            {% if is_pdf %}
+              <iframe class="thumb-frame" src="/download/{{ p.filename }}?inline=1#page=1&view=FitH&toolbar=0&navpanes=0" loading="lazy"></iframe>
+            {% else %}
+              <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+            {% endif %}
+          </div>
+          <div class="card__body">
+            <h4>{{ p.title }}</h4>
+            <p class="muted featured-byline">
+              {% if p.owner_username %}
+                <a class="featured-byline__inline byline-link" href="/users/{{ p.owner_username }}">by <span class="byline-name">{{ p.owner_username }}</span></a>
+              {% else %}
+                <span class="featured-byline__inline">by Unknown</span>
+              {% endif %}
+              {% if p.owner_username %}<span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }} featured-byline__badge">★</span>{% endif %}
+            </p>
+            <p class="muted" style="margin-top:6px;">
+              <strong>{{ p.owner_presentation_count or 0 }}</strong> presentations ·
+              <strong>{{ p.views or 0 }}</strong> views ·
+              <strong>{{ p.downloads or 0 }}</strong> downloads ·
+              <strong>{{ p.likes_count or 0 }}</strong> likes
+            </p>
+          </div>
         </a>
-        <div class="card__body">
-          <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
-          <div class="card__meta">Views: {{ p.views }} • Likes: {{ p.likes_count or 0 }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
-          <p class="card__desc">{{ p.description or '-' }}</p>
-        </div>
       </article>
       {% endfor %}
     </div>

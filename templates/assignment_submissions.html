@@ -4,12 +4,16 @@
 
 {% block content %}
   <section class="container" style="max-width:980px;margin-top:18px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
       <div>
         <h1 style="margin:0;font-size:20px;">Submissions for: {{ assignment.title }}</h1>
-        <a href="/classrooms/{{ classroom_id }}/library" class="muted" style="font-size:13px;">← Back to classroom</a>
+        <a href="/classrooms/{{ classroom_id }}/view" class="muted" style="font-size:13px;">← Back to classroom</a>
       </div>
-      <div style="text-align:right;color:var(--muted);font-size:13px;">Assignment ID: {{ assignment.id }}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn" type="button" data-space-meeting-start="{{ classroom_id }}" data-space-name="{{ assignment.title }}">Start meeting</button>
+        <button class="btn btn--ghost" type="button" data-space-meeting-join="{{ classroom_id }}" data-space-name="{{ assignment.title }}">Join meeting</button>
+        <div style="text-align:right;color:var(--muted);font-size:13px;">Assignment ID: {{ assignment.id }}</div>
+      </div>
     </div>
 
     <div class="content-card" style="padding:12px 14px;margin-bottom:14px;">

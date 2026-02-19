@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="container feed-shell">
+  <div class="feed-hero">
+    <div>
+      <h1 class="section-title">Your Learning Feed</h1>
+      <p class="muted">Smart picks from creators, categories, and your recent viewing.</p>
+    </div>
+    <div class="feed-hero__actions">
+      <a class="btn" href="/upload">Upload</a>
+    </div>
+  </div>
+
+  <section class="feed-section">
+    <div class="section-head">
+      <h2>Trending now</h2>
+      <p class="muted">Most viewed presentations right now.</p>
+    </div>
+    <div class="scroll-row" data-scroll-row>
+      <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+      <div class="feed-row scroll-row__track" data-scroll-track>
+      {% for pres in trending %}
+      <article class="card card--wide" data-preview data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-file="{{ pres.filename }}">
+        <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+          <div class="card__thumb">
+            {% set slide_thumb = '/media/thumbs/' ~ pres.id ~ '/slide_0.png' %}
+            {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+          </div>
+          <div class="card__body">
+            <h4 class="feed-card__title">{{ pres.title }}</h4>
+            <p class="muted feed-byline">
+              {% if pres.owner_username %}
+                <a class="feed-byline__inline byline-link" href="/users/{{ pres.owner_username }}">by <span class="byline-name">{{ pres.owner_username }}</span></a>
+              {% else %}
+                <span class="feed-byline__inline">by Creator</span>
+              {% endif %}
+              {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
+            </p>
+            <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
+            <div class="card__actions">
+              {% if pres.owner_id %}
+              <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
+              {% endif %}
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
+            </div>
+          </div>
+        </a>
+      </article>
+      {% else %}
+      <div class="empty">No trending presentations yet.</div>
+      {% endfor %}
+      </div>
+      <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
+    </div>
+  </section>
+
+  <section class="feed-section">
+    <div class="section-head">
+      <h2>Because you viewed{% if because_title %} “{{ because_title }}”{% endif %}</h2>
+      <p class="muted">Similar decks you might love.</p>
+    </div>
+    <div class="scroll-row" data-scroll-row>
+      <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+      <div class="feed-row scroll-row__track" data-scroll-track>
+      {% for pres in because_viewed %}
+      <article class="card card--wide" data-preview data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-file="{{ pres.filename }}">
+        <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+          <div class="card__thumb">
+            {% set slide_thumb = '/media/thumbs/' ~ pres.id ~ '/slide_0.png' %}
+            {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+          </div>
+          <div class="card__body">
+            <h4 class="feed-card__title">{{ pres.title }}</h4>
+            <p class="muted feed-byline">
+              {% if pres.owner_username %}
+                <a class="feed-byline__inline byline-link" href="/users/{{ pres.owner_username }}">by <span class="byline-name">{{ pres.owner_username }}</span></a>
+              {% else %}
+                <span class="feed-byline__inline">by Creator</span>
+              {% endif %}
+              {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
+            </p>
+            <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
+            <div class="card__actions">
+              {% if pres.owner_id %}
+              <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
+              {% endif %}
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
+            </div>
+          </div>
+        </a>
+      </article>
+      {% else %}
+      <div class="empty">No recommendations yet.</div>
+      {% endfor %}
+      </div>
+      <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
+    </div>
+  </section>
+
+  <section class="feed-section">
+    <div class="section-head">
+      <h2>Popular in category</h2>
+      <p class="muted">Top decks by topic.</p>
+    </div>
+    {% for block in popular_in_category %}
+    <div class="category-block">
+      <h3>{{ block.category.name }}</h3>
+      <div class="scroll-row" data-scroll-row>
+        <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+        <div class="feed-row scroll-row__track" data-scroll-track>
+        {% for pres in block['items'] %}
+        <article class="card card--wide" data-preview data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-file="{{ pres.filename }}">
+          <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+            <div class="card__thumb">
+              {% set slide_thumb = '/media/thumbs/' ~ pres.id ~ '/slide_0.png' %}
+              {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+            </div>
+            <div class="card__body">
+              <h4 class="feed-card__title">{{ pres.title }}</h4>
+              <p class="muted feed-byline">
+                {% if pres.owner_username %}
+                  <a class="feed-byline__inline byline-link" href="/users/{{ pres.owner_username }}">by <span class="byline-name">{{ pres.owner_username }}</span></a>
+                {% else %}
+                  <span class="feed-byline__inline">by Creator</span>
+                {% endif %}
+                {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
+              </p>
+              <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
+              <div class="card__actions">
+                {% if pres.owner_id %}
+                <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
+                {% endif %}
+                <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
+              </div>
+            </div>
+          </a>
+        </article>
+        {% endfor %}
+        </div>
+        <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="feed-section">
+    <div class="section-head">
+      <h2>From followed creators</h2>
+      <p class="muted">Fresh uploads from creators you follow.</p>
+    </div>
+    <div class="scroll-row" data-scroll-row>
+      <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+      <div class="feed-row scroll-row__track" data-scroll-track>
+      {% for pres in from_followed %}
+      <article class="card card--wide" data-preview data-title="{{ pres.title }}" data-id="{{ pres.id }}" data-file="{{ pres.filename }}">
+        <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
+          <div class="card__thumb">
+            {% set slide_thumb = '/media/thumbs/' ~ pres.id ~ '/slide_0.png' %}
+            {% set placeholder = request.url_for('static', path='slide-placeholder.svg') %}
+            <img src="{{ slide_thumb }}" alt="{{ pres.title }}" loading="lazy" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ (pres.cover_url|public_media_url) or placeholder }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+          </div>
+          <div class="card__body">
+            <h4 class="feed-card__title">{{ pres.title }}</h4>
+            <p class="muted feed-byline">
+              {% if pres.owner_username %}
+                <a class="feed-byline__inline byline-link" href="/users/{{ pres.owner_username }}">by <span class="byline-name">{{ pres.owner_username }}</span></a>
+              {% else %}
+                <span class="feed-byline__inline">by Creator</span>
+              {% endif %}
+              {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
+            </p>
+            <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
+            <div class="card__actions">
+              {% if pres.owner_id %}
+              <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
+              {% endif %}
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
+            </div>
+          </div>
+        </a>
+      </article>
+      {% else %}
+      <div class="empty">Follow creators to see their latest here.</div>
+      {% endfor %}
+      </div>
+      <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
+    </div>
+  </section>
+</section>
+
+<div id="preview-modal" class="preview-modal hidden">
+  <div class="preview-panel">
+    <button class="preview-close" data-preview-close>✕</button>
+    <div class="preview-header">
+      <h3 id="preview-title">Preview</h3>
+      <p id="preview-status" class="muted"></p>
+    </div>
+    <div class="preview-body preview-body--thumbs">
+      <div class="preview-thumbs" id="preview-thumbs"></div>
+      <div class="preview-main">
+        <button class="preview-nav prev" id="preview-prev" aria-label="Previous slide">‹</button>
+        <button class="preview-nav next" id="preview-next" aria-label="Next slide">›</button>
+        <img id="preview-slide" alt="Slide preview" />
+        <canvas id="preview-canvas"></canvas>
+        <object id="preview-object" data="" type="application/pdf"></object>
+        <div id="preview-placeholder" class="preview-placeholder">Loading preview…</div>
+      </div>
+    </div>
+    <div class="preview-actions">
+      <a id="preview-open" class="btn" href="#">Open</a>
+      <a id="preview-download" class="btn btn--ghost" href="#">Download</a>
+    </div>
+    <div id="preview-message" class="muted"></div>
+  </div>
+</div>
+{% endblock %}

@@ -2,28 +2,28 @@
 
 {% block content %}
 {# categories are rendered globally in base.html; no duplicate here #}
-<section class="container" style="margin-top:0px; padding-top:0px;">
-  <div class="panel-head">
-    <h1 class="section-title">Featured presentations</h1>
-    <p class="muted">Curated and spotlighted decks — slide through the selection.</p>
+<section class="container" style="margin-top:-28px; padding-top:0px;">
+  <div class="panel-head featured-hero">
+    <h1 class="section-title featured-hero__title">Your Learning Feed</h1>
+    <p class="muted featured-hero__subtitle">Curated and spotlighted decks — slide through the selection.</p>
   </div>
 
-  <div class="featured-carousel">
+  <div class="featured-carousel scroll-row" data-scroll-row>
     <div class="featured-nav" style="left:-48px;">
-      <button id="featured-prev" class="prev" aria-label="Scroll left">◀</button>
+      <button id="featured-prev" class="prev" data-scroll-prev aria-label="Scroll left">◀</button>
     </div>
 
-    <div class="featured-track" id="featured-track" data-carousel>
+    <div class="featured-track scroll-row__track" id="featured-track" data-carousel data-scroll-track>
       {% for p in featured %}
       <article class="featured-card card" data-pid="{{ p.id }}">
         <a class="card__link" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
           <div class="card__thumb" style="position:relative;">
             {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
-            {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+            {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
             {% if is_pdf %}
               <iframe class="thumb-frame" src="/download/{{ p.filename }}?inline=1#page=1&view=FitH&toolbar=0&navpanes=0" loading="lazy"></iframe>
             {% else %}
-              <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src=this.dataset.placeholder" />
+              <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
             {% endif %}
             <button class="preview-trigger" aria-label="Open preview" title="Preview" style="position:absolute;right:12px;bottom:12px;width:44px;height:44px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--brand-1));color:#fff;box-shadow:0 8px 20px rgba(16,24,40,0.3);cursor:pointer;">
               ▶
@@ -31,12 +31,19 @@
           </div>
           <div class="card__body">
             <h4>{{ p.title }}</h4>
-            <p class="muted">by&nbsp;{% if p.owner_username %}<span class="user-link" data-href="/users/{{ p.owner_username }}">{{ p.owner_username }}</span> <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}{{ p.author or 'Unknown' }}{% endif %}</p>
+            <p class="muted featured-byline">
+              {% if p.owner_username %}
+                <a class="featured-byline__inline byline-link" href="/users/{{ p.owner_username }}">by <span class="byline-name">{{ p.owner_username }}</span></a>
+              {% else %}
+                <span class="featured-byline__inline">by {{ p.author or 'Unknown' }}</span>
+              {% endif %}
+              {% if p.owner_username %}<span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }} featured-byline__badge">★</span>{% endif %}
+            </p>
             <p class="muted" style="margin-top:6px;">
               <strong>{{ p.owner_presentation_count or 0 }}</strong> presentations ·
               <strong>{{ p.views or 0 }}</strong> views ·
+              <strong>{{ p.downloads or 0 }}</strong> downloads ·
               <strong>{{ p.likes_count or 0 }}</strong> likes
-              <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span>
             </p>
           </div>
         </a>
@@ -48,7 +55,7 @@
     </div>
 
     <div class="featured-nav" style="right:-48px;">
-      <button id="featured-next" class="next" aria-label="Scroll right">▶</button>
+      <button id="featured-next" class="next" data-scroll-next aria-label="Scroll right">▶</button>
     </div>
   </div>
 </section>

@@ -2,6 +2,8 @@
 Run with: python -m app.rq_worker
 """
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import sys
 import time
 try:

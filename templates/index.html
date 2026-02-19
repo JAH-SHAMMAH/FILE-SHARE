@@ -69,7 +69,7 @@
           <p class="muted lead">A cool place to share, read, and be enlightened.</p>
           <div class="hero-actions">
             <a class="btn" href="{{ url_for('register') }}">start your journey</a>
-            <a class="btn btn--ghost" href="{{ url_for('login') }}">Sign in</a>
+            <a class="btn" href="{{ url_for('support_coffee') }}">buy me a cup of coffee</a>
           </div>
         </div>
       </div>
@@ -187,19 +187,21 @@
         <h3 class="section-title">Latest uploads</h3>
         <p class="muted">Recent files uploaded by the community. Click to view or download.</p>
       </div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:10px;">
+      <div class="scroll-row" data-scroll-row>
+        <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+        <div class="grid scroll-row__track" data-scroll-track style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:10px;">
         {% for pres in presentations %}
         {% set is_pdf = pres.filename and pres.filename.lower().endswith('.pdf') %}
-        {% set slide_thumb = '/presentations/' ~ pres.id ~ '/slide/0' %}
+        {% set slide_thumb = '/media/thumbs/' ~ pres.id ~ '/slide_0.png' %}
         {% set thumb_pdf = '/download/' ~ pres.filename ~ '?inline=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-        {% set cover_or_pdf = pres.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+        {% set cover_or_pdf = (pres.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
         <article class="card" data-pid="{{ pres.id }}">
           <a href="{{ url_for('view_presentation', presentation_id=pres.id) }}" class="card__link">
             <div class="card__thumb">
               {% if is_pdf %}
-              <iframe class="thumb-frame" src="{{ cover_or_pdf }}" title="{{ pres.title }} preview" loading="lazy" data-cover="{{ pres.cover_url or '' }}"></iframe>
+              <iframe class="thumb-frame" src="{{ cover_or_pdf }}" title="{{ pres.title }} preview" loading="lazy" data-cover="{{ pres.cover_url|public_media_url or '' }}"></iframe>
               {% else %}
-              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}">
+              <img src="{{ slide_thumb }}" alt="{{ pres.title }}" data-cover="{{ pres.cover_url|public_media_url or '' }}" data-fallback="/presentations/{{ pres.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}">
               {% endif %}
             </div>
             <div class="card__body">
@@ -207,7 +209,8 @@
               <p class="muted">by&nbsp;{% if pres.owner_username %}<a href="/users/{{ pres.owner_username }}">{{ pres.owner_username }}</a> <span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}{{ (('User ' ~ pres.owner_id) if pres.owner_id else (pres.author or 'Unknown')) }}{% endif %}</p>
               <p class="muted" style="margin-top:6px;">
                 <strong>{{ pres.owner_presentation_count or 0 }}</strong> presentations ·
-                <strong>{{ pres.views or 0 }}</strong> views ·
+                  <strong>{{ pres.views or 0 }}</strong> views ·
+                  <strong>{{ pres.downloads or 0 }}</strong> downloads ·
                 <strong>{{ pres.likes_count or 0 }}</strong> likes
                 <span class="card__saved" data-id="{{ pres.id }}">⭐ {{ pres.bookmarks_count or 0 }}</span>
               </p>
@@ -217,6 +220,8 @@
         {% else %}
         <p class="muted">No uploads yet. Be the first to <a href="{{ url_for('upload') }}">upload</a>.</p>
         {% endfor %}
+        </div>
+        <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
       </div>
     </section>
     {% endif %}

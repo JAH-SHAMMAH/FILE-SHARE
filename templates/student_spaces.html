@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block title %}My Spaces{% endblock %}
+
+{% block content %}
+<section class="container" style="max-width:980px;margin-top:18px;">
+  <h1 style="margin-bottom:8px;">My Spaces</h1>
+  {% set is_teacher = request.state.current_user and request.state.current_user.site_role == 'teacher' %}
+  <div class="card" style="padding:14px;border-radius:12px;margin-bottom:14px;">
+    <h2 style="margin:0 0 6px 0;font-size:16px;">Join a space</h2>
+    <p class="muted" style="margin:0 0 10px 0;">Enter the join code provided by your teacher.</p>
+    <div id="join-space-message" class="muted" style="margin:0 0 10px 0;display:none;"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <input id="join-space-code" placeholder="e.g. AB12CD" style="flex:1;min-width:180px;padding:8px 10px;border-radius:999px;border:1px solid var(--border);font-size:14px;text-transform:uppercase;" />
+      <button id="join-space-btn" class="btn" type="button" style="padding:8px 14px;font-size:14px;border-radius:999px;">Join space</button>
+    </div>
+  </div>
+
+  {% if spaces and spaces|length %}
+    <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+      {% for s in spaces %}
+      <article class="card" style="padding:14px;border-radius:12px;">
+        <h2 style="margin:0 0 6px 0;font-size:18px;">{{ s.name }}</h2>
+
+        <p style="margin:0 0 10px 0;">Teachers:
+          {% for t in s.teachers %}
+            {% set _role = t.site_role|default('teacher') %}
+            <a href="/users/{{ t.username }}">{{ t.username }}</a> <span class="role-badge role-badge--{{ _role|lower }}">★</span>{% if not loop.last %}, {% endif %}
+          {% else %}
+            <span class="muted">No teachers listed</span>
+          {% endfor %}
+        </p>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <a class="btn" href="/spaces/{{ s.id }}/view">Open space</a>
+          <a class="btn btn--ghost" href="/spaces/{{ s.id }}/library">Library</a>
+          {% if request.state.current_user and request.state.current_user.site_role in ['teacher', 'admin'] %}
+          <button class="btn btn--ghost" type="button" data-space-meeting-start="{{ s.id }}" data-space-name="{{ s.name }}">Start meeting</button>
+          {% endif %}
+          <button class="btn btn--ghost" type="button" data-space-meeting-join="{{ s.id }}" data-space-name="{{ s.name }}">Join meeting</button>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card" style="padding:16px;">
+      {% if is_teacher %}
+        <p class="muted">You haven't created any spaces yet.</p>
+        <p><button id="create-space-btn" class="btn">Create your first space</button></p>
+      {% else %}
+        <p class="muted">You are not a member of any spaces yet.</p>
+        <p>If you were invited, accept the invitation from your notifications.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
+
+<!-- Create space modal (teacher) -->
+<div id="create-space-modal" class="modal" role="dialog" aria-hidden="true" style="display:none;position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
+  <div class="modal__panel" style="background:#fff;padding:18px;border-radius:10px;max-width:520px;width:96%;box-shadow:0 6px 20px rgba(0,0,0,0.2);">
+    <h3 style="margin-top:0;color:#111827;">Create space</h3>
+    <form id="create-space-form" method="post" action="/teacher/spaces/new">
+      <div style="margin-bottom:8px;"><label>Name<br><input name="name" required style="width:100%;padding:8px;"/></label></div>
+      <div style="margin-bottom:8px;"><label>Code (optional)<br><input name="code" style="width:100%;padding:8px;"/></label></div>
+      <input type="hidden" name="csrf_token" id="create_space_csrf" value="" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button type="button" id="create-space-cancel" class="btn btn--ghost">Cancel</button>
+        <button type="submit" class="btn">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const openBtn = document.getElementById('create-space-btn');
+  const modal = document.getElementById('create-space-modal');
+  const cancel = document.getElementById('create-space-cancel');
+  const form = document.getElementById('create-space-form');
+  const csrfField = document.getElementById('create_space_csrf');
+
+  function getCookie(name){
+    const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+    return v ? decodeURIComponent(v.pop()) : '';
+  }
+
+  if(openBtn){
+    openBtn.addEventListener('click', ()=>{
+      try{ csrfField.value = getCookie('csrf_token') || ''; }catch(e){}
+      modal.style.display = 'flex';
+      modal.setAttribute('aria-hidden','false');
+    });
+  }
+  if(cancel){ cancel.addEventListener('click', ()=>{ modal.style.display='none'; modal.setAttribute('aria-hidden','true'); }); }
+
+  if(form){
+    form.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const fd = new FormData(form);
+      try{
+        const res = await fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' });
+        if(res.ok){
+          window.location.reload();
+        } else {
+          const text = await res.text();
+          alert('Failed to create space:\n'+(text||res.statusText));
+        }
+      }catch(err){
+        alert('Network error: '+err.message);
+      }
+    });
+  }
+
+  const joinBtn = document.getElementById('join-space-btn');
+  const joinInput = document.getElementById('join-space-code');
+  const joinMsg = document.getElementById('join-space-message');
+  if (joinBtn && joinInput){
+    joinBtn.addEventListener('click', async ()=>{
+      const code = (joinInput.value || '').trim();
+      if (joinMsg){ joinMsg.style.display = 'none'; joinMsg.textContent = ''; joinMsg.style.color = ''; }
+      if (!code){
+        if (joinMsg){ joinMsg.textContent = 'Enter a join code.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+        return;
+      }
+      try{
+        const res = await fetch('/api/spaces/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        if (!res.ok){
+          const j = await res.json().catch(()=>({detail:'Join failed'}));
+          if (joinMsg){ joinMsg.textContent = j.detail || 'Join failed'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+          return;
+        }
+        const j = await res.json().catch(()=>({}));
+        if (j.space_id){
+          if (joinMsg){ joinMsg.textContent = j.message || 'Joined space.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#16a34a'; }
+          window.location.href = `/spaces/${j.space_id}/view`;
+        } else {
+          if (joinMsg){ joinMsg.textContent = j.message || 'Joined space.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#16a34a'; }
+          window.location.reload();
+        }
+      }catch(e){
+        if (joinMsg){ joinMsg.textContent = 'Network error.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}{{ classroom.name }} — Class Library{% endblock %}
+
+{% block content %}
+<section class="container" style="max-width:980px;margin-top:18px;">
+  <div class="content-card" style="padding:18px;">
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+      <div>
+        <h1 style="margin:0 0 6px 0;">Class Library</h1>
+        <p class="muted" style="margin:0;">Materials uploaded by teachers for {{ classroom.name }}.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        {% set role = (member.role|default('student'))|lower %}
+        {% if role in ['teacher','admin'] %}
+        <button class="btn" type="button" data-space-meeting-start="{{ classroom.id }}" data-space-name="{{ classroom.name }}">Start meeting</button>
+        {% endif %}
+        <button class="btn btn--ghost" type="button" data-space-meeting-join="{{ classroom.id }}" data-space-name="{{ classroom.name }}">Join meeting</button>
+        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/view">Back to classroom</a>
+      </div>
+    </div>
+
+    {% set role = (member.role|default('student'))|lower %}
+    {% if role in ['teacher','admin'] %}
+    <form method="post" action="/classrooms/{{ classroom.id }}/library/upload" enctype="multipart/form-data" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <input type="text" name="title" placeholder="Material title" style="flex:1;min-width:180px;padding:8px 10px;border-radius:999px;border:1px solid var(--border);font-size:14px;" />
+      <input type="file" name="file" required style="flex:1;min-width:220px;" />
+      <input type="hidden" name="csrf_token" id="library_csrf" value="" />
+      <button class="btn" type="submit" style="padding:8px 14px;font-size:14px;border-radius:999px;">Upload</button>
+    </form>
+    {% endif %}
+
+    <div style="margin-top:16px;">
+      {% if items and items|length %}
+        <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+          {% for it in items %}
+            <article class="card" style="padding:14px;border-radius:12px;">
+              <div style="font-weight:600;">{{ it.title or 'Untitled material' }}</div>
+              <div class="muted" style="font-size:13px;margin-top:4px;">{{ it.mimetype or 'file' }}</div>
+              <div style="margin-top:10px;display:flex;gap:8px;">
+                <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/library/download/{{ it.id }}">Download</a>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted" style="margin-top:12px;">No teacher uploads yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  const csrfField = document.getElementById('library_csrf');
+  function getCookie(name){
+    const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+    return v ? decodeURIComponent(v.pop()) : '';
+  }
+  if (csrfField) {
+    try { csrfField.value = getCookie('csrf_token') || ''; } catch (e) {}
+  }
+})();
+</script>
+{% endblock %}

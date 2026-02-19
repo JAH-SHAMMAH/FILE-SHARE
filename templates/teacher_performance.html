@@ -14,7 +14,9 @@
     <h1 style="margin-bottom:8px;">Teacher performance — {{ classroom.name }}</h1>
     <p class="muted" style="margin-bottom:12px;">Overview of activity across teachers and students in this classroom.</p>
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/library">Back to classroom</a>
+      <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/view">Back to classroom</a>
+      <button class="btn" type="button" data-space-meeting-start="{{ classroom.id }}" data-space-name="{{ classroom.name }}">Start meeting</button>
+      <button class="btn btn--ghost" type="button" data-space-meeting-join="{{ classroom.id }}" data-space-name="{{ classroom.name }}">Join meeting</button>
       <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance.csv">Download CSV</a>
       <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/performance/students">Student metrics (JSON)</a>
       <div style="margin-left:auto;color:var(--muted);font-size:13px;">Teachers: <strong style="color:var(--text);">{{ teachers|length if teachers else 0 }}</strong></div>

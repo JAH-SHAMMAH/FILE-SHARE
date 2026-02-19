@@ -3,17 +3,19 @@ import os
 import subprocess
 try:
     from redis import Redis
-    from rq import Queue
+    from rq import Queue, Worker
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     redis = Redis.from_url(redis_url)
     q = Queue(connection=redis)
 except ImportError:
     Redis = None
     Queue = None
+    Worker = None
     redis = None
     q = None
 from pathlib import Path
 from .database import engine
+from .ai_client import chat_completion, get_ai_provider
 from sqlmodel import Session, select
 from .models import ConversionJob, Presentation
 from .models import AIResult
@@ -345,19 +347,15 @@ def enqueue_conversion(presentation_id: int, filename: str):
 
 
 def ai_summarize_presentation(presentation_id: int):
-    """Worker: fetch presentation text (if available) and call OpenAI to summarize."""
-    OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-    # prepare prompt_text from description + first pages of PDF if available
+    """Worker: summarize a presentation using local/OpenAI chat_completion with fallback."""
     with Session(engine) as session:
         pres = session.get(Presentation, presentation_id)
         if not pres:
             return
-        # start with a short header including the title so the summary can reference it
         title = (getattr(pres, "title", "") or "").strip()
         desc = (pres.description or "").strip()
         header = f"Title: {title}\n" if title else ""
         prompt_text = header + (desc or "")
-        # if there's a local PDF, attempt to read first pages
         from pathlib import Path
         UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
         if pres.filename and pres.filename.endswith(".pdf"):
@@ -370,99 +368,62 @@ def ai_summarize_presentation(presentation_id: int):
             except Exception:
                 pass
 
-    if not OPENAI_KEY:
-        # Fallback: simple extractive summarizer when OpenAI key missing
-        try:
-            # naive sentence splitter: split on punctuation
-            import re
-            sentences = re.split(r'(?<=[\.\!\?])\s+', (prompt_text or '').strip())
-            # pick first few informative sentences up to ~120 words
-            summary_lines = []
-            word_count = 0
-            for s in sentences:
-                if not s.strip():
-                    continue
-                summary_lines.append(s.strip())
-                word_count += len(s.split())
-                if word_count >= 120 or len(summary_lines) >= 4:
-                    break
-            resp_text = "\n\n".join(summary_lines) if summary_lines else (prompt_text[:800] or "No text available to summarize.")
-        except Exception:
-            resp_text = "No OpenAI key configured and local summarizer failed"
-        with Session(engine) as session:
-            ar = AIResult(presentation_id=presentation_id, task_type="summary", result=resp_text)
-            session.add(ar)
-            session.commit()
-            session.refresh(ar)
-        return
-
-    # naive approach: try to find a text-extract in Presentation.description or a linked PDF
-    with Session(engine) as session:
-        pres = session.get(Presentation, presentation_id)
-        if not pres:
-            return
-        title = (getattr(pres, "title", "") or "").strip()
-        desc = (pres.description or "").strip()
-        header = f"Title: {title}\n" if title else ""
-        prompt_text = header + (desc or "")
-        # if there's a local PDF, attempt to read first 10000 chars (best-effort)
-        from pathlib import Path
-        UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
-        if pres.filename and pres.filename.endswith(".pdf"):
-            ppath = Path(UPLOAD_DIR) / pres.filename
-            try:
-                import fitz
-                doc = fitz.open(str(ppath))
-                txt = "\n".join([doc[i].get_text() for i in range(min(len(doc), 5))])
-                prompt_text += "\n" + txt
-            except Exception:
-                pass
-
-    # call OpenAI (ChatCompletion) with the prompt_text
     try:
-        headers = {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"}
-        data = {
-            "model": "gpt-4o-mini",
-            "messages": [{
-                "role": "user",
-                "content": (
-                    "You are helping a busy student decide whether to read a presentation. "
-                    "Given the title and extracted text below, write a concise, friendly overview that:\n"
-                    "- Describes what the presentation is about in plain language,\n"
-                    "- Highlights the main topics or sections,\n"
-                    "- Mentions who it is most useful for (e.g., students, teachers, beginners, advanced),\n"
-                    "- Stays under about 6 sentences.\n\n"
-                    "Presentation info:\n" + prompt_text
-                ),
-            }],
-            "max_tokens": 800,
-        }
-        resp_text = ""
-        with httpx.Client(timeout=30) as client:
-            r = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-            if r.status_code == 200:
-                j = r.json()
-                resp_text = j.get("choices", [{}])[0].get("message", {}).get("content", "")
-            else:
-                resp_text = f"OpenAI error: {r.status_code}"
-    except Exception as e:
-        resp_text = str(e)
+        prompt = (
+            "You are helping a busy student decide whether to read a presentation. "
+            "Given the title and extracted text below, write a concise, friendly overview that:\n"
+            "- Describes what the presentation is about in plain language,\n"
+            "- Highlights the main topics or sections,\n"
+            "- Mentions who it is most useful for (e.g., students, teachers, beginners, advanced),\n"
+            "- Stays under about 6 sentences.\n\n"
+            "Presentation info:\n" + prompt_text
+        )
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+        resp_text = chat_completion([
+            {"role": "user", "content": prompt}
+        ], model=model, max_tokens=800, temperature=0.4)
+    except Exception:
+        try:
+            import re
+            sents = re.split(r'(?<=[\.!?])\s+', (prompt_text or '').strip())
+            resp_text = " ".join([s for s in sents[:5] if s])[:1200] or "No text available to summarize."
+        except Exception:
+            resp_text = "Summary generation failed."
 
     with Session(engine) as session:
         ar = AIResult(presentation_id=presentation_id, task_type="summary", result=resp_text)
         session.add(ar)
+        try:
+            pres = session.get(Presentation, presentation_id)
+            if pres:
+                pres.ai_summary = resp_text
+                session.add(pres)
+        except Exception:
+            pass
         session.commit()
         session.refresh(ar)
 
 
 def enqueue_ai_summary(presentation_id: int):
-    job = q.enqueue(ai_summarize_presentation, presentation_id)
-    return job.get_id()
+    try:
+        if q is None or redis is None or Worker is None:
+            raise RuntimeError("rq unavailable")
+        # if no workers are listening, run synchronously to avoid hanging polls
+        try:
+            if len(Worker.all(connection=redis)) == 0:
+                ai_summarize_presentation(presentation_id)
+                return None
+        except Exception:
+            pass
+        job = q.enqueue(ai_summarize_presentation, presentation_id)
+        return job.get_id()
+    except Exception:
+        ai_summarize_presentation(presentation_id)
+        return None
 
 
 def ai_generate_quiz(presentation_id: int):
-    """Generate quiz questions from presentation text using OpenAI or fallback simple heuristics."""
-    OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+    """Generate quiz questions from presentation text."""
     with Session(engine) as session:
         pres = session.get(Presentation, presentation_id)
         if not pres:
@@ -483,40 +444,24 @@ def ai_generate_quiz(presentation_id: int):
             except Exception:
                 pass
 
-    resp_text = ""
-    if OPENAI_KEY:
-        try:
-            headers = {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"}
-            data = {
-                "model": "gpt-4o-mini",
-                "messages": [{
-                    "role": "user",
-                    "content": (
-                        "You are creating a quick self-check quiz for a presentation. "
-                        "Using the title and text below, write 5 numbered multiple-choice questions. For each question, include:\n"
-                        "- The question on its own line,\n"
-                        "- 4 answer options labeled A), B), C), D),\n"
-                        "- A final line starting with 'Answer:' and the correct option letter.\n\n"
-                        "Keep the language simple and student-friendly.\n\n"
-                        "Presentation info:\n" + prompt_text
-                    ),
-                }],
-                "max_tokens": 800,
-            }
-            with httpx.Client(timeout=30) as client:
-                r = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-                if r.status_code == 200:
-                    j = r.json()
-                    resp_text = j.get("choices", [{}])[0].get("message", {}).get("content", "")
-                else:
-                    resp_text = f"OpenAI error: {r.status_code}"
-        except Exception as e:
-            resp_text = str(e)
-    else:
-        # fallback: simple question generation by selecting sentences
+    try:
+        prompt = (
+            "You are creating a quick self-check quiz for a presentation. "
+            "Using the title and text below, write 5 numbered multiple-choice questions. For each question, include:\n"
+            "- The question on its own line,\n"
+            "- 4 answer options labeled A), B), C), D),\n"
+            "- A final line starting with 'Answer:' and the correct option letter.\n\n"
+            "Keep the language simple and student-friendly.\n\n"
+            "Presentation info:\n" + prompt_text
+        )
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+        resp_text = chat_completion([
+            {"role": "user", "content": prompt}
+        ], model=model, max_tokens=800, temperature=0.4)
+    except Exception:
         try:
             import re
-            sents = re.split(r'(?<=[\.\!\?])\s+', (prompt_text or '').strip())
+            sents = re.split(r'(?<=[\.!?])\s+', (prompt_text or '').strip())
             qs = []
             for i, s in enumerate(sents[:5]):
                 if not s.strip():
@@ -524,7 +469,7 @@ def ai_generate_quiz(presentation_id: int):
                 qs.append(f"Q{i+1}: {s.strip()}\nA) True  B) False  C) Maybe  D) Not sure\nAnswer: A")
             resp_text = "\n\n".join(qs) if qs else "No content to generate quiz."
         except Exception:
-            resp_text = "No OpenAI key configured and quiz generation failed"
+            resp_text = "Quiz generation failed."
 
     with Session(engine) as session:
         ar = AIResult(presentation_id=presentation_id, task_type="quiz", result=resp_text)
@@ -534,12 +479,23 @@ def ai_generate_quiz(presentation_id: int):
 
 
 def enqueue_ai_quiz(presentation_id: int):
-    job = q.enqueue(ai_generate_quiz, presentation_id)
-    return job.get_id()
+    try:
+        if q is None or redis is None or Worker is None:
+            raise RuntimeError("rq unavailable")
+        try:
+            if len(Worker.all(connection=redis)) == 0:
+                ai_generate_quiz(presentation_id)
+                return None
+        except Exception:
+            pass
+        job = q.enqueue(ai_generate_quiz, presentation_id)
+        return job.get_id()
+    except Exception:
+        ai_generate_quiz(presentation_id)
+        return None
 
 
 def ai_generate_flashcards(presentation_id: int):
-    OPENAI_KEY = os.getenv("OPENAI_API_KEY")
     with Session(engine) as session:
         pres = session.get(Presentation, presentation_id)
         if not pres:
@@ -548,33 +504,19 @@ def ai_generate_flashcards(presentation_id: int):
         desc = (pres.description or "").strip()
         header = f"Title: {title}\n" if title else ""
         prompt_text = header + (desc or "")
-    resp_text = ""
-    if OPENAI_KEY:
-        try:
-            headers = {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"}
-            data = {
-                "model": "gpt-4o-mini",
-                "messages": [{
-                    "role": "user",
-                    "content": (
-                        "Create 10 concise study flashcards from the following presentation. "
-                        "Each flashcard should be in the format 'Term: short, simple definition'. "
-                        "Focus on the most important concepts, keywords, or formulas that a learner should remember.\n\n"
-                        "Presentation info:\n" + prompt_text
-                    ),
-                }],
-                "max_tokens": 800,
-            }
-            with httpx.Client(timeout=30) as client:
-                r = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-                if r.status_code == 200:
-                    j = r.json()
-                    resp_text = j.get("choices", [{}])[0].get("message", {}).get("content", "")
-                else:
-                    resp_text = f"OpenAI error: {r.status_code}"
-        except Exception as e:
-            resp_text = str(e)
-    else:
+
+    try:
+        prompt = (
+            "Create 10 concise study flashcards from the following presentation. "
+            "Each flashcard should be in the format 'Term: short, simple definition'. "
+            "Focus on the most important concepts, keywords, or formulas that a learner should remember.\n\n"
+            "Presentation info:\n" + prompt_text
+        )
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+        resp_text = chat_completion([
+            {"role": "user", "content": prompt}
+        ], model=model, max_tokens=800, temperature=0.4)
+    except Exception:
         resp_text = (prompt_text or '')[:800] or 'No content to generate flashcards.'
 
     with Session(engine) as session:
@@ -585,12 +527,23 @@ def ai_generate_flashcards(presentation_id: int):
 
 
 def enqueue_ai_flashcards(presentation_id: int):
-    job = q.enqueue(ai_generate_flashcards, presentation_id)
-    return job.get_id()
+    try:
+        if q is None or redis is None or Worker is None:
+            raise RuntimeError("rq unavailable")
+        try:
+            if len(Worker.all(connection=redis)) == 0:
+                ai_generate_flashcards(presentation_id)
+                return None
+        except Exception:
+            pass
+        job = q.enqueue(ai_generate_flashcards, presentation_id)
+        return job.get_id()
+    except Exception:
+        ai_generate_flashcards(presentation_id)
+        return None
 
 
 def ai_generate_mindmap(presentation_id: int):
-    OPENAI_KEY = os.getenv("OPENAI_API_KEY")
     with Session(engine) as session:
         pres = session.get(Presentation, presentation_id)
         if not pres:
@@ -599,34 +552,20 @@ def ai_generate_mindmap(presentation_id: int):
         desc = (pres.description or "").strip()
         header = f"Title: {title}\n" if title else ""
         prompt_text = header + (desc or "")
-    resp_text = ""
-    if OPENAI_KEY:
-        try:
-            headers = {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"}
-            data = {
-                "model": "gpt-4o-mini",
-                "messages": [{
-                    "role": "user",
-                    "content": (
-                        "Based on the presentation information below, create a text mind-map outline. "
-                        "Use bullet points with indentation to show structure, for example:\n"
-                        "- Main topic\n  - Subtopic 1\n    - Key detail A\n  - Subtopic 2\n"
-                        "Cover the central idea first, then 3–6 main branches with 2–4 short subpoints each.\n\n"
-                        "Presentation info:\n" + prompt_text
-                    ),
-                }],
-                "max_tokens": 800,
-            }
-            with httpx.Client(timeout=30) as client:
-                r = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-                if r.status_code == 200:
-                    j = r.json()
-                    resp_text = j.get("choices", [{}])[0].get("message", {}).get("content", "")
-                else:
-                    resp_text = f"OpenAI error: {r.status_code}"
-        except Exception as e:
-            resp_text = str(e)
-    else:
+
+    try:
+        prompt = (
+            "Based on the presentation information below, create a text mind-map outline. "
+            "Use bullet points with indentation to show structure, for example:\n"
+            "- Main topic\n  - Subtopic 1\n    - Key detail A\n  - Subtopic 2\n"
+            "Cover the central idea first, then 3–6 main branches with 2–4 short subpoints each.\n\n"
+            "Presentation info:\n" + prompt_text
+        )
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+        resp_text = chat_completion([
+            {"role": "user", "content": prompt}
+        ], model=model, max_tokens=800, temperature=0.4)
+    except Exception:
         resp_text = (prompt_text or '')[:800] or 'No content to generate mind map.'
 
     with Session(engine) as session:
@@ -637,8 +576,20 @@ def ai_generate_mindmap(presentation_id: int):
 
 
 def enqueue_ai_mindmap(presentation_id: int):
-    job = q.enqueue(ai_generate_mindmap, presentation_id)
-    return job.get_id()
+    try:
+        if q is None or redis is None or Worker is None:
+            raise RuntimeError("rq unavailable")
+        try:
+            if len(Worker.all(connection=redis)) == 0:
+                ai_generate_mindmap(presentation_id)
+                return None
+        except Exception:
+            pass
+        job = q.enqueue(ai_generate_mindmap, presentation_id)
+        return job.get_id()
+    except Exception:
+        ai_generate_mindmap(presentation_id)
+        return None
 
 
 def ai_autograde_submission(submission_id: int):
@@ -717,7 +668,7 @@ def ai_autograde_submission(submission_id: int):
             session.add(sub)
             # record analytics event
             try:
-                sa = StudentAnalytics(user_id=sub.student_id, classroom_id=a.classroom_id if a else None, event_type='grade', details=f'grade={grade};assignment={sub.assignment_id}')
+                sa = StudentAnalytics(user_id=sub.student_id, space_id=a.space_id if a else None, event_type='grade', details=f'grade={grade};assignment={sub.assignment_id}')
                 session.add(sa)
             except Exception:
                 pass

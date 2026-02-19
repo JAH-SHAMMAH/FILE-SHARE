@@ -1,6 +1,69 @@
 {% extends "base.html" %}
+{% block head %}
+<style>
+  .profile-page--public #presentations .scroll-row__track > article.card,
+  .profile-page--public #likes .scroll-row__track > article.card {
+    min-width: 200px;
+    max-width: 200px;
+    height: 320px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .profile-page--public #presentations .card__thumb img,
+  .profile-page--public #presentations .card__thumb iframe,
+  .profile-page--public #presentations .thumb-frame,
+  .profile-page--public #likes .card__thumb img,
+  .profile-page--public #likes .card__thumb iframe,
+  .profile-page--public #likes .thumb-frame {
+    height: 132px;
+  }
+
+  .profile-page--public #presentations .card__body,
+  .profile-page--public #likes .card__body {
+    padding: 10px 11px 12px;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .profile-page--public #presentations .card__title,
+  .profile-page--public #likes .card__title {
+    font-size: 14px;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .profile-page--public #presentations .card__meta,
+  .profile-page--public #likes .card__meta,
+  .profile-page--public #presentations .card__desc,
+  .profile-page--public #likes .card__desc {
+    font-size: 12px;
+  }
+
+  .profile-page--public #presentations .card__meta,
+  .profile-page--public #likes .card__meta {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .profile-page--public #presentations .card__desc,
+  .profile-page--public #likes .card__desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="container content-card profile-page">
+<div class="container content-card profile-page{% if request.url.path.startswith('/users/') %} profile-page--public{% endif %}">
     <div class="profile-header" style="display:flex;gap:16px;align-items:center" data-username="{{ user_obj.username }}">
     <div class="avatar">
       {% set initials = (user_obj.username or '??')[:2].upper() %}
@@ -32,7 +95,14 @@
         {% endif %}
       </div>
       <p class="muted">{{ user_obj.bio or 'No bio provided yet.' }}</p>
-      <p class="muted" style="margin-top:6px;"><strong>{{ owner_presentation_count or 0 }}</strong> presentations · <strong>{{ owner_total_views or 0 }}</strong> views</p>
+      <p class="muted" style="margin-top:6px;"><strong>{{ owner_presentation_count or 0 }}</strong> presentations · <strong>{{ owner_total_views or 0 }}</strong> views · <strong>{{ owner_total_downloads or 0 }}</strong> downloads</p>
+      {% if badges %}
+        <div class="creator-badges" style="margin-top:6px;">
+          {% for b in badges %}
+            <span class="creator-badge">{{ b }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
         <div class="meta muted">Followers: <span id="follower-count">{{ follower_count }}</span> • Following: <span id="following-count">{{ following_count }}</span></div>
       <div style="margin-top:8px;">
         <div><strong>Email:</strong> {{ user_obj.email or '—' }}</div>
@@ -47,11 +117,14 @@
   </div>
   <!-- profile tabs -->
   <nav class="profile-tabs" style="margin-top:18px;border-bottom:1px solid var(--border);padding-bottom:12px;">
-    <ul style="list-style:none;display:flex;gap:12px;padding:0;margin:0;align-items:center">
-      <li><a href="#presentations" class="pill">Presentations</a></li>
+    <ul class="profile-tabs__list" style="list-style:none;display:flex;gap:12px;padding:0;margin:0;align-items:center">
+      <li><a href="#presentations" class="pill active">Presentations</a></li>
       <li><a href="#infographics" class="pill">Infographics</a></li>
       <li><a href="#documents" class="pill">Documents</a></li>
       <li><a href="#likes" class="pill">Likes</a></li>
+      {% if current_user and current_user.username == user_obj.username %}
+      <li><a href="#folders" class="pill">Folders</a></li>
+      {% endif %}
       <li><a href="#followers" class="pill">Followers</a></li>
       <li><a href="#following" class="pill">Following</a></li>
       <li><a href="#about" class="pill">About</a></li>
@@ -59,40 +132,161 @@
   </nav>
 
   <div id="profile-content">
-    <section style="margin-top:18px">
+    <section id="presentations" data-profile-tab="presentations" style="margin-top:18px">
       <h3>Presentations</h3>
-      <div class="grid">
-      {% for p in presentations %}
+      <div class="scroll-row" data-scroll-row>
+        <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+        <div class="grid scroll-row__track" data-scroll-track>
+        {% for p in presentations %}
       <article class="card" data-pid="{{ p.id }}">
         {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
-        {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+        {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
         {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-        {% set cover_or_pdf = p.cover_url or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
+        {% set cover_or_pdf = (p.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
         <a class="card__thumb" href="/presentations/{{ p.id }}">
           {% if is_pdf %}
-          <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url or '' }}">
+          <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url|public_media_url or '' }}">
             <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
             <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
           </div>
           {% else %}
-          <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='cover-placeholder.svg') }}" />
+          <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url|public_media_url or '' }}" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='cover-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
           {% endif %}
         
           
         </a>
         <div class="card__body">
           <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
-          <div class="card__meta">Views: {{ p.views }} • Likes: {{ p.likes_count or 0 }}{% if p.category %} • <a href="/search?category={{ p.category.name|url_encode }}">{{ p.category.name }}</a>{% endif %}</div>
-          <p class="card__desc">{{ p.description or "-" }}</p>
-          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-            <button class="btn btn--small btn-share" data-title="{{ p.title }}" data-id="{{ p.id }}" data-filename="{{ p.filename }}">Share</button>
-          </div>
+          <p class="card__meta">by&nbsp;{% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}Unknown{% endif %}</p>
         </div>
       </article>
       {% else %}
       <div class="empty">No presentations yet.</div>
       {% endfor %}
+        </div>
+        <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
       </div>
+    </section>
+
+    <section id="infographics" data-profile-tab="infographics" style="margin-top:18px;display:none">
+      <h3>Infographics</h3>
+      <div class="muted">No infographics yet.</div>
+    </section>
+
+    <section id="documents" data-profile-tab="documents" style="margin-top:18px;display:none">
+      <h3>Documents</h3>
+      <div class="muted">No documents yet.</div>
+    </section>
+
+    <section id="likes" data-profile-tab="likes" style="margin-top:18px;display:none">
+      <h3>Likes</h3>
+      <div class="scroll-row" data-scroll-row>
+        <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+        <div class="grid scroll-row__track" data-scroll-track>
+        {% for p in liked_presentations %}
+      <article class="card" data-pid="{{ p.id }}">
+        {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+        {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
+        {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+        {% set cover_or_pdf = (p.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
+        <a class="card__thumb" href="/presentations/{{ p.id }}">
+          {% if is_pdf %}
+          <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url|public_media_url or '' }}">
+            <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
+            <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
+          </div>
+          {% else %}
+          <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url|public_media_url or '' }}" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='cover-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+          {% endif %}
+        </a>
+        <div class="card__body">
+          <a class="card__title" href="/presentations/{{ p.id }}">{{ p.title }}</a>
+          <p class="card__meta">by&nbsp;{% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a>{% else %}Unknown{% endif %}</p>
+        </div>
+      </article>
+      {% else %}
+      <div class="empty">No likes yet.</div>
+      {% endfor %}
+        </div>
+        <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
+      </div>
+    </section>
+
+    {% if current_user and current_user.username == user_obj.username %}
+    <section id="folders" data-profile-tab="folders" style="margin-top:18px;display:none">
+      <h3>Folders</h3>
+      <div class="grid">
+      {% for c in collections %}
+        <article class="card" style="padding:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="font-weight:700;">{{ c.name }}</div>
+            <div class="muted" style="font-size:12px;">{{ c.count }} item{{ '' if c.count == 1 else 's' }}</div>
+          </div>
+        </article>
+      {% else %}
+        <div class="empty">No folders yet.</div>
+      {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section id="followers" data-profile-tab="followers" style="margin-top:18px;display:none">
+      <h3>Followers</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for u in followers_list %}
+        <a href="/users/{{ u.username }}" class="card" style="display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;">
+          {% if u.avatar %}
+            <img src="/download/{{ u.avatar }}?inline=1" alt="{{ u.username }} avatar" style="width:40px;height:40px;border-radius:10px;object-fit:cover;" />
+          {% else %}
+            <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#1f1f3f;background:linear-gradient(135deg,#eef1ff,#ffd9a8);">
+              {{ (u.username or '??')[:2].upper() }}
+            </div>
+          {% endif %}
+          <div>
+            <div style="font-weight:700;">{{ u.full_name or u.username }}</div>
+            <div class="muted" style="font-size:12px;">@{{ u.username }}</div>
+          </div>
+        </a>
+      {% else %}
+        <div class="muted">No followers yet.</div>
+      {% endfor %}
+      </div>
+    </section>
+
+    <section id="following" data-profile-tab="following" style="margin-top:18px;display:none">
+      <h3>Following</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for u in following_list %}
+        <a href="/users/{{ u.username }}" class="card" style="display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;">
+          {% if u.avatar %}
+            <img src="/download/{{ u.avatar }}?inline=1" alt="{{ u.username }} avatar" style="width:40px;height:40px;border-radius:10px;object-fit:cover;" />
+          {% else %}
+            <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#1f1f3f;background:linear-gradient(135deg,#eef1ff,#ffd9a8);">
+              {{ (u.username or '??')[:2].upper() }}
+            </div>
+          {% endif %}
+          <div>
+            <div style="font-weight:700;">{{ u.full_name or u.username }}</div>
+            <div class="muted" style="font-size:12px;">@{{ u.username }}</div>
+          </div>
+        </a>
+      {% else %}
+        <div class="muted">Not following anyone yet.</div>
+      {% endfor %}
+      </div>
+    </section>
+
+    <section id="about" data-profile-tab="about" style="margin-top:18px;display:none">
+      <h3>About</h3>
+      <div class="muted">{{ user_obj.bio or 'No bio provided yet.' }}</div>
+      <div style="margin-top:8px;">
+        <div><strong>Email:</strong> {{ user_obj.email or '—' }}</div>
+        {% if user_obj.country %}<div><strong>Country:</strong> {{ user_obj.country }}</div>{% endif %}
+        {% if user_obj.state %}<div><strong>State:</strong> {{ user_obj.state }}</div>{% endif %}
+      </div>
+      {% if user_obj.date_of_birth %}
+      <div class="meta muted" style="margin-top:6px;">Born: {{ user_obj.date_of_birth }}</div>
+      {% endif %}
     </section>
   </div>
 </div>

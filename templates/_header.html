@@ -22,9 +22,6 @@
         <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
           <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
         </button>
-        <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
-          <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
         <div class="profile-menu">
           <div class="profile-menu__head">
               <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
@@ -59,13 +56,10 @@
         </div>
       {% else %}
         <div class="nav-links-right">
-          <a class="nav-link small" href="{{ url_for('about') }}">About us</a>
           <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
-          <a class="nav-link small" href="{{ url_for('login') }}">Sign in</a>
           <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
         </div>
       {% endif %}
-      <button id="theme-toggle" aria-label="Coffee mode" class="icon-btn">☕ Coffee</button>
     </nav>
   </div>
 </header>

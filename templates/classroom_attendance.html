@@ -1,42 +1,54 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>{{ classroom.name }} — Attendance</title>
-  <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-  <div class="container">
-    <h1>Attendance — {{ classroom.name }}</h1>
-    <p><a href="/classrooms/{{ classroom.id }}/library">Back to classroom</a></p>
+{% extends 'base.html' %}
+{% block title %}{{ classroom.name }} — Attendance{% endblock %}
 
-    {% if members %}
-      <form id="attendance-form">
-        <table>
-          <thead><tr><th>Student</th><th>Status</th></tr></thead>
-          <tbody>
-          {% for m in members %}
-            {% if m.role == 'student' %}
-            <tr>
-              <td>{{ m.username or m.user_id }}</td>
-              <td>
-                <select name="status_{{ m.user_id }}">
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="late">Late</option>
-                </select>
-              </td>
-            </tr>
-            {% endif %}
-          {% endfor %}
-          </tbody>
-        </table>
-        <button id="submit-attendance" type="button">Save Attendance</button>
-      </form>
-    {% else %}
-      <p>No members found for this classroom.</p>
-    {% endif %}
-  </div>
+{% block content %}
+  <section class="container" style="max-width:980px;margin-top:18px;">
+    <div class="content-card" style="padding:18px;">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+        <div>
+          <h1 style="margin:0 0 6px 0;">Attendance — {{ classroom.name }}</h1>
+          <p class="muted" style="margin:0;">Mark attendance for each student.</p>
+        </div>
+        <a class="btn btn--ghost" href="/classrooms/{{ classroom.id }}/view">Back to classroom</a>
+      </div>
+
+      {% if members %}
+        <form id="attendance-form" style="margin-top:14px;">
+          <div class="content-card" style="padding:12px;border:1px solid var(--border);">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);">Student</th>
+                  <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for m in members %}
+                {% if m.role == 'student' %}
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid var(--border);">{{ m.username or m.user_id }}</td>
+                  <td style="padding:8px;border-bottom:1px solid var(--border);">
+                    <select name="status_{{ m.user_id }}" style="padding:6px 8px;border-radius:8px;border:1px solid var(--border);">
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="late">Late</option>
+                    </select>
+                  </td>
+                </tr>
+                {% endif %}
+              {% endfor %}
+              </tbody>
+            </table>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+              <button id="submit-attendance" class="btn" type="button">Save Attendance</button>
+            </div>
+          </div>
+        </form>
+      {% else %}
+        <p class="muted" style="margin-top:12px;">No members found for this classroom.</p>
+      {% endif %}
+    </div>
+  </section>
 
   <script>
     document.getElementById('submit-attendance')?.addEventListener('click', async function(){
@@ -67,5 +79,4 @@
       }
     });
   </script>
-</body>
-</html>
+{% endblock %}

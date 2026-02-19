@@ -2,6 +2,14 @@
 // Track created blob URLs so we can clean them up on unload
 const pdfBlobUrls = [];
 
+// Ensure global helpers exist to avoid ReferenceError from inline handlers
+try {
+  if (typeof window !== 'undefined') {
+    window.thumbnails = window.thumbnails || [];
+    window.currentIndex = typeof window.currentIndex !== 'undefined' ? window.currentIndex : 0;
+  }
+} catch (e) { /* ignore */ }
+
 // Toast helper: non-blocking, non-disabling UI feedback
 function showToast(message, type = 'info', timeout = 4000, action = null) {
   try {
@@ -63,6 +71,26 @@ function showToast(message, type = 'info', timeout = 4000, action = null) {
     }, timeout);
   } catch (e) { /* swallow */ }
 }
+
+// Minimal markdown renderer for AI text (bold/italic/newlines)
+function renderAiMarkdown(text) {
+  try {
+    const raw = String(text || '');
+    const esc = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    // bold then italic
+    let html = esc.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // line breaks
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  } catch (e) {
+    return String(text || '');
+  }
+}
+try { window.renderAiMarkdown = renderAiMarkdown; } catch(e) {}
 
 // Global fetch wrapper: show sign-in toast on 401 responses
 (function(){
@@ -170,6 +198,39 @@ if (window.pdfjsLib) {
 })();
 
 // Placeholder hook for future interactions
+
+// Horizontal scroll rows (presentation carousels)
+document.addEventListener('DOMContentLoaded', function(){
+  function initScrollRow(row){
+    const track = row.querySelector('[data-scroll-track]');
+    const prev = row.querySelector('[data-scroll-prev]');
+    const next = row.querySelector('[data-scroll-next]');
+    if (!track || !prev || !next) return;
+
+    function update(){
+      const max = track.scrollWidth - track.clientWidth;
+      const hasOverflow = max > 4;
+      prev.style.display = hasOverflow ? 'flex' : 'none';
+      next.style.display = hasOverflow ? 'flex' : 'none';
+      prev.disabled = track.scrollLeft <= 2;
+      next.disabled = track.scrollLeft >= max - 2;
+    }
+
+    prev.addEventListener('click', function(){
+      track.scrollBy({ left: -track.clientWidth * 0.8, behavior: 'smooth' });
+    });
+    next.addEventListener('click', function(){
+      track.scrollBy({ left: track.clientWidth * 0.8, behavior: 'smooth' });
+    });
+    track.addEventListener('scroll', function(){
+      requestAnimationFrame(update);
+    });
+    setTimeout(update, 60);
+    window.addEventListener('resize', update);
+  }
+
+  document.querySelectorAll('[data-scroll-row]').forEach(initScrollRow);
+});
 document.addEventListener("submit", function () {
   // keep default behavior; extend as needed
 });
@@ -190,6 +251,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const messageEl = document.getElementById("preview-message");
     const openEl = document.getElementById("preview-open");
     const downloadEl = document.getElementById("preview-download");
+    const thumbsEl = document.getElementById("preview-thumbs");
+    const slideEl = document.getElementById("preview-slide");
+    const prevBtn = document.getElementById("preview-prev");
+    const nextBtn = document.getElementById("preview-next");
+    const previewMain = modal.querySelector(".preview-main");
+
+    let currentThumbs = [];
+    let activeIndex = 0;
 
     const closeModal = () => {
       modal.classList.add("hidden");
@@ -201,6 +270,13 @@ document.addEventListener("DOMContentLoaded", () => {
         canvas.height = 0;
         canvas.style.display = "none";
       }
+      if (slideEl) {
+        slideEl.src = "";
+        slideEl.style.display = "none";
+      }
+      if (thumbsEl) thumbsEl.innerHTML = "";
+      currentThumbs = [];
+      activeIndex = 0;
     };
 
     modal.addEventListener("click", (e) => {
@@ -240,27 +316,99 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    const handlePreview = async (id) => {
+    const setActiveSlide = (index) => {
+      if (!currentThumbs.length || !slideEl) return;
+      const clamped = Math.max(0, Math.min(index, currentThumbs.length - 1));
+      activeIndex = clamped;
+      slideEl.src = currentThumbs[clamped];
+      slideEl.style.display = "block";
+      if (thumbsEl) {
+        thumbsEl.querySelectorAll("img").forEach((img, i) => {
+          img.classList.toggle("active", i === clamped);
+        });
+      }
+      if (statusEl) statusEl.textContent = `Slide ${clamped + 1} of ${currentThumbs.length}`;
+      if (prevBtn) prevBtn.disabled = clamped === 0;
+      if (nextBtn) nextBtn.disabled = clamped >= currentThumbs.length - 1;
+    };
+
+    const renderThumbnails = (thumbs) => {
+      if (!thumbsEl || !slideEl) return false;
+      currentThumbs = Array.isArray(thumbs) ? thumbs : [];
+      thumbsEl.innerHTML = "";
+      if (!currentThumbs.length) return false;
+      currentThumbs.forEach((url, i) => {
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = `Slide ${i + 1}`;
+        img.loading = "lazy";
+        img.addEventListener("click", () => setActiveSlide(i));
+        thumbsEl.appendChild(img);
+      });
+      setActiveSlide(0);
+      return true;
+    };
+
+    const handlePreview = async (id, titleHint = "") => {
       try {
         messageEl.classList.add("hidden");
         if (placeholder) placeholder.style.display = "block";
         if (objectEl) objectEl.style.display = "none";
         if (canvas) canvas.style.display = "none";
+        if (slideEl) slideEl.style.display = "none";
+        if (thumbsEl) thumbsEl.innerHTML = "";
         statusEl.textContent = "Loading preview…";
-        titleEl.textContent = "Preview";
+        titleEl.textContent = titleHint || "Preview";
         openEl.href = "#";
         downloadEl.href = "#";
+        if (downloadEl) downloadEl.style.display = "none";
 
-        const res = await fetch(`/api/presentations/${id}/preview`);
-        if (!res.ok) throw new Error("Preview not available");
-        const data = await res.json();
+        const [thumbRes, previewRes] = await Promise.allSettled([
+          fetch(`/presentations/${id}/thumbnails`),
+          fetch(`/api/presentations/${id}/preview`)
+        ]);
 
-        titleEl.textContent = data.title || "Preview";
-        statusEl.textContent = data.conversion_status || "";
+        let previewData = null;
+        if (previewRes.status === "fulfilled" && previewRes.value.ok) {
+          previewData = await previewRes.value.json();
+        }
 
-        if (data.viewer_url) {
-          const pageHint = data.viewer_url.includes("#") ? "" : "#page=1&view=FitH&toolbar=0&navpanes=0";
-          const clean = data.viewer_url.split("#")[0];
+        let thumbsData = null;
+        if (thumbRes.status === "fulfilled" && thumbRes.value.ok) {
+          thumbsData = await thumbRes.value.json();
+        }
+
+        if (previewData) {
+          titleEl.textContent = previewData.title || titleHint || "Preview";
+          statusEl.textContent = previewData.conversion_status || "";
+          if (previewData.original_url) {
+            downloadEl.href = previewData.original_url;
+            downloadEl.style.display = "inline-flex";
+          }
+          if (previewData.viewer_url) {
+            const pageHint = previewData.viewer_url.includes("#") ? "" : "#page=1&view=FitH&toolbar=0&navpanes=0";
+            openEl.href = `${previewData.viewer_url}${pageHint}`;
+          } else {
+            openEl.href = `/presentations/${id}`;
+          }
+        } else {
+          openEl.href = `/presentations/${id}`;
+        }
+
+        const thumbs = thumbsData && Array.isArray(thumbsData.thumbnails) ? thumbsData.thumbnails : [];
+        if (thumbs.length) {
+          const rendered = renderThumbnails(thumbs);
+          if (rendered) {
+            if (placeholder) placeholder.style.display = "none";
+            if (objectEl) objectEl.style.display = "none";
+            if (canvas) canvas.style.display = "none";
+            modal.classList.remove("hidden");
+            return;
+          }
+        }
+        if (previewData && previewData.viewer_url) {
+          const pageHint = previewData.viewer_url.includes("#") ? "" : "#page=1&view=FitH&toolbar=0&navpanes=0";
+          const clean = previewData.viewer_url.split("#")[0];
           try {
             const resPdf = await fetch(clean);
             if (!resPdf.ok) throw new Error("fetch failed");
@@ -279,32 +427,26 @@ document.addEventListener("DOMContentLoaded", () => {
             statusEl.textContent = rendered ? statusEl.textContent : "";
           } catch (err) {
             if (objectEl) {
-              objectEl.setAttribute("data", `${data.viewer_url}${pageHint}`);
+              objectEl.setAttribute("data", `${previewData.viewer_url}${pageHint}`);
               showObject();
             }
-            openEl.href = `${data.viewer_url}${pageHint}`;
+            openEl.href = `${previewData.viewer_url}${pageHint}`;
           }
         } else {
           if (canvas) canvas.style.display = "none";
           if (objectEl) objectEl.style.display = "none";
           messageEl.textContent =
-            data.conversion_status === "unsupported"
+            previewData && previewData.conversion_status === "unsupported"
               ? "This file type cannot be previewed."
               : "Preview will be ready after conversion.";
           messageEl.classList.remove("hidden");
-        }
-
-        if (data.original_url) {
-          downloadEl.href = data.original_url;
-          downloadEl.style.display = "inline-flex";
-        } else {
-          downloadEl.style.display = "none";
         }
 
         modal.classList.remove("hidden");
       } catch (err) {
         if (canvas) canvas.style.display = "none";
         if (objectEl) objectEl.style.display = "none";
+        if (slideEl) slideEl.style.display = "none";
         messageEl.textContent = "Preview unavailable.";
         messageEl.classList.remove("hidden");
         modal.classList.remove("hidden");
@@ -315,9 +457,28 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         const id = btn.getAttribute("data-preview-id");
-        if (id) handlePreview(id);
+        const titleHint = btn.closest("[data-title]")?.getAttribute("data-title") || "";
+        if (id) handlePreview(id, titleHint);
       });
     });
+
+    prevBtn?.addEventListener("click", () => setActiveSlide(activeIndex - 1));
+    nextBtn?.addEventListener("click", () => setActiveSlide(activeIndex + 1));
+
+    if (previewMain) {
+      let touchStartX = 0;
+      previewMain.addEventListener("touchstart", (e) => {
+        touchStartX = e.touches[0]?.clientX || 0;
+      });
+      previewMain.addEventListener("touchend", (e) => {
+        if (!currentThumbs.length) return;
+        const endX = e.changedTouches[0]?.clientX || 0;
+        const delta = endX - touchStartX;
+        if (Math.abs(delta) < 40) return;
+        if (delta < 0) setActiveSlide(activeIndex + 1);
+        else setActiveSlide(activeIndex - 1);
+      });
+    }
   }
 
   // Notifications: fetch and show badge + panel (should run on all pages)
@@ -488,6 +649,204 @@ document.addEventListener("DOMContentLoaded", () => {
   setTimeout(refreshNotifBadge, 800);
 });
 
+// Download menu + collection modal + drag/drop upload
+document.addEventListener("DOMContentLoaded", () => {
+  // Language switcher: follow device language by default and allow manual selection
+  (function(){
+    const switcher = document.getElementById('lang-switcher');
+    if (!switcher) return;
+    const flagEl = document.getElementById('lang-flag');
+    const codeEl = document.getElementById('lang-code');
+    const dropdown = document.getElementById('lang-dropdown');
+    const btn = switcher.querySelector('.lang-button');
+
+    const getCookie = (name) => {
+      const m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : '';
+    };
+
+    const supported = ['en','es','fr','pt','de','ar','hi','zh','ja'];
+    const detectLang = () => {
+      const raw = (navigator.language || 'en').toLowerCase();
+      const base = raw.split('-')[0];
+      return supported.includes(base) ? base : 'en';
+    };
+    const detectEnFlag = () => {
+      const raw = (navigator.language || '').toLowerCase();
+      return raw.startsWith('en-gb') || raw.startsWith('en-ie') ? '1f1ec-1f1e7' : '1f1fa-1f1f8';
+    };
+    const getFlagSvgForLang = (lang) => {
+      const code = {
+        en: detectEnFlag(),
+        es: '1f1ea-1f1f8',
+        fr: '1f1eb-1f1f7',
+        pt: '1f1e7-1f1f7',
+        de: '1f1e9-1f1ea',
+        ar: '1f1f8-1f1e6',
+        hi: '1f1ee-1f1f3',
+        zh: '1f1e8-1f1f3',
+        ja: '1f1ef-1f1f5',
+      }[lang] || '1f310';
+      return `https://twemoji.maxcdn.com/v/latest/svg/${code}.svg`;
+    };
+
+    const setIndicator = (lang) => {
+      if (flagEl && flagEl.tagName && flagEl.tagName.toLowerCase() === 'img') {
+        flagEl.setAttribute('src', getFlagSvgForLang(lang));
+      }
+      if (codeEl) codeEl.textContent = (lang || 'en').toUpperCase();
+    };
+
+    const setLang = (lang) => {
+      const l = supported.includes(lang) ? lang : 'en';
+      document.cookie = `ui_lang=${encodeURIComponent(l)}; path=/; max-age=${60 * 60 * 24 * 365}`;
+      setIndicator(l);
+      try { window.location.reload(); } catch (e) {}
+    };
+
+    // default to device language if no cookie set
+    const existing = getCookie('ui_lang');
+    if (!existing) {
+      const autoLang = detectLang();
+      setIndicator(autoLang);
+      document.cookie = `ui_lang=${encodeURIComponent(autoLang)}; path=/; max-age=${60 * 60 * 24 * 365}`;
+      try { window.location.reload(); } catch (e) {}
+      return;
+    }
+
+    setIndicator(existing);
+
+    if (btn && dropdown) {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const open = switcher.classList.toggle('is-open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('click', (e) => {
+        if (!switcher.contains(e.target)) {
+          switcher.classList.remove('is-open');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    if (dropdown) {
+      dropdown.addEventListener('click', (e) => {
+        const opt = e.target.closest('[data-lang]');
+        if (!opt) return;
+        e.preventDefault();
+        const lang = opt.getAttribute('data-lang') || 'en';
+        setLang(lang);
+      });
+    }
+  })();
+
+  // download dropdown
+  document.querySelectorAll('[data-download-menu]').forEach((menu) => {
+    const btn = menu.querySelector('button');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      menu.classList.toggle('open');
+    });
+  });
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('[data-download-menu].open').forEach((m) => {
+      if (!m.contains(e.target)) m.classList.remove('open');
+    });
+  });
+
+  // collections modal
+  const modal = document.getElementById('collection-modal');
+  const openBtn = document.getElementById('save-to-collection');
+  const closeBtn = modal ? modal.querySelector('[data-collection-close]') : null;
+  const listEl = document.getElementById('collection-list');
+  const createBtn = document.getElementById('collection-create-btn');
+  const nameInput = document.getElementById('collection-name');
+  const presentationId = openBtn ? openBtn.getAttribute('data-presentation-id') : null;
+
+  function openModal(){
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal(){
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  if (openBtn) openBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+  if (closeBtn) closeBtn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+  async function addToCollection(collectionId){
+    if (!presentationId) return;
+    const res = await fetch(`/api/collections/${collectionId}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ presentation_id: Number(presentationId) })
+    });
+    if (res.ok) { showToast('Saved to folder', 'success'); closeModal(); }
+    else { showToast('Failed to save', 'error'); }
+  }
+
+  if (listEl) {
+    listEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.collection-item');
+      if (!btn) return;
+      const id = btn.getAttribute('data-collection-id');
+      if (id) addToCollection(id);
+    });
+  }
+
+  if (createBtn && nameInput) {
+    createBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const name = nameInput.value.trim();
+      if (!name) return;
+      const res = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) { showToast('Failed to create folder', 'error'); return; }
+      const data = await res.json();
+      const btn = document.createElement('button');
+      btn.className = 'collection-item';
+      btn.setAttribute('data-collection-id', data.id);
+      btn.textContent = data.name;
+      listEl.appendChild(btn);
+      nameInput.value = '';
+      addToCollection(data.id);
+    });
+  }
+
+  // drag & drop upload validation
+  const fileInput = document.getElementById('file-input');
+  const dropzone = document.querySelector('.dropzone');
+  const fileName = document.getElementById('file-name');
+  const allowed = ['.pdf', '.ppt', '.pptx', '.pptm', '.mp4', '.mov', '.m4v', '.webm'];
+  if (dropzone && fileInput) {
+    const prevent = (e)=>{ e.preventDefault(); e.stopPropagation(); };
+    ['dragenter','dragover','dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, prevent));
+    dropzone.addEventListener('drop', (e) => {
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      const lower = f.name.toLowerCase();
+      const ok = allowed.some(ext => lower.endsWith(ext));
+      if (!ok) { showToast('Unsupported file type', 'error'); return; }
+      fileInput.files = e.dataTransfer.files;
+      if (fileName) fileName.textContent = f.name;
+    });
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f && fileName) fileName.textContent = f.name;
+    });
+  }
+});
+
 // (role selector modal removed; role is chosen on a dedicated page)
 
 // Inline PDF thumbnails on cards: fetch, render first page via pdf.js, fallback to object blob
@@ -655,6 +1014,31 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// Presentation AI panels: ensure they appear above overlays and get a brief highlight
+document.addEventListener("DOMContentLoaded", () => {
+  const mappings = [
+    { btnId: 'ai-slide-btn', panelId: 'ai-slide-container' },
+    { btnId: 'ai-summary-btn', panelId: 'ai-summary-container' },
+    { btnId: 'ai-quiz-btn', panelId: 'ai-quiz-container' },
+    { btnId: 'ai-flash-btn', panelId: 'ai-flash-container' },
+  ];
+
+  mappings.forEach(({ btnId, panelId }) => {
+    const btn = document.getElementById(btnId);
+    const panel = document.getElementById(panelId);
+    if (!btn || !panel) return;
+
+    btn.addEventListener('click', () => {
+      try {
+        panel.style.zIndex = 99999;
+        panel.classList.add('ai-debug-highlight');
+        // remove highlight after a short period to avoid permanent styling
+        setTimeout(() => { panel.classList.remove('ai-debug-highlight'); }, 3000);
+      } catch (e) { /* ignore */ }
+    });
+  });
+});
+
 // Profile dropdown toggle (global, class-based state)
 document.addEventListener("DOMContentLoaded", () => {
   const triggers = document.querySelectorAll(".profile-trigger");
@@ -703,45 +1087,72 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Profile tabs: AJAX load / client-side switching
-document.addEventListener('click', async (e) => {
-  const tabLink = e.target.closest('.profile-tabs a');
-  if (!tabLink) return;
-  e.preventDefault();
-  const tabHref = tabLink.getAttribute('href') || '#presentations';
-  const tabName = tabHref.replace('#','');
-  // mark active
-  document.querySelectorAll('.profile-tabs a').forEach(a=>a.classList.remove('active'));
-  tabLink.classList.add('active');
+// Profile tabs: client-side switching with optional AJAX fallback
+(function(){
+  function setProfileTab(tabName, opts){
+    const options = opts || {};
+    const container = document.getElementById('profile-content');
+    if (!container) return false;
+    const sections = Array.from(container.querySelectorAll('[data-profile-tab]'));
+    if (!sections.length) return false;
 
-  const header = document.querySelector('.profile-header[data-username]');
-  if (!header) return;
-  const username = header.getAttribute('data-username');
-  const container = document.getElementById('profile-content');
-  if (!container) return;
+    sections.forEach((section) => {
+      const isActive = section.getAttribute('data-profile-tab') === tabName;
+      section.style.display = isActive ? '' : 'none';
+    });
 
-  // show a lightweight loading state
-  const prev = container.innerHTML;
-  container.innerHTML = '<div class="muted">Loading…</div>';
+    document.querySelectorAll('.profile-tabs a').forEach(a=>a.classList.remove('active'));
+    const activeLink = document.querySelector(`.profile-tabs a[href="#${tabName}"]`);
+    if (activeLink) activeLink.classList.add('active');
 
-  try {
-    // fetch the user's full profile page and extract #profile-content
-    const res = await fetch(`/users/${encodeURIComponent(username)}?ajax=1`);
-    if (!res.ok) throw new Error('failed');
-    const text = await res.text();
-    const doc = new DOMParser().parseFromString(text, 'text/html');
-    const frag = doc.getElementById('profile-content');
-    if (frag) {
-      // if the tabContent exists inside frag (e.g., separate sections), try to extract a matching section
-      const requested = frag.querySelector('#' + tabName) || frag;
-      container.innerHTML = requested.innerHTML || frag.innerHTML;
-    } else {
-      container.innerHTML = prev; // fallback
+    if (options.updateHash) {
+      try { history.replaceState(null, '', `#${tabName}`); } catch (e) { /* ignore */ }
     }
-  } catch (err) {
-    container.innerHTML = '<div class="muted">Content not available.</div>';
+    return true;
   }
-});
+
+  document.addEventListener('click', async (e) => {
+    const tabLink = e.target.closest('.profile-tabs a');
+    if (!tabLink) return;
+    e.preventDefault();
+    const tabHref = tabLink.getAttribute('href') || '#presentations';
+    const tabName = tabHref.replace('#','');
+
+    if (setProfileTab(tabName, { updateHash: true })) return;
+
+    const header = document.querySelector('.profile-header[data-username]');
+    if (!header) return;
+    const username = header.getAttribute('data-username');
+    const container = document.getElementById('profile-content');
+    if (!container) return;
+
+    // show a lightweight loading state
+    const prev = container.innerHTML;
+    container.innerHTML = '<div class="muted">Loading…</div>';
+
+    try {
+      // fetch the user's full profile page and extract #profile-content
+      const res = await fetch(`/users/${encodeURIComponent(username)}?ajax=1`);
+      if (!res.ok) throw new Error('failed');
+      const text = await res.text();
+      const doc = new DOMParser().parseFromString(text, 'text/html');
+      const frag = doc.getElementById('profile-content');
+      if (frag) {
+        const requested = frag.querySelector('#' + tabName) || frag;
+        container.innerHTML = requested.innerHTML || frag.innerHTML;
+      } else {
+        container.innerHTML = prev; // fallback
+      }
+    } catch (err) {
+      container.innerHTML = '<div class="muted">Content not available.</div>';
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const hash = (window.location.hash || '#presentations').replace('#','');
+    setProfileTab(hash, { updateHash: false });
+  });
+})();
 
 // Follow button: optimistic update
 document.addEventListener('click', async (e) => {
@@ -886,6 +1297,16 @@ document.addEventListener("DOMContentLoaded", () => {
   if (aiButtons && aiButtons.length && aiInput && aiOutput) {
     aiButtons.forEach((btn) => {
       btn.addEventListener("click", async () => {
+        // If this AI button is intended to open the chat UI, trigger the
+        // global chat launcher so chat.js shows the modal (keeps logic
+        // centralized in chat.js). Use either data-ai-mode="chat" or
+        // data-ai-open-chat="1" on the button.
+        if (btn.getAttribute("data-ai-open-chat") === "1" || btn.getAttribute("data-ai-mode") === "chat") {
+          const launch = document.querySelector('#chat-launcher');
+          if (launch) { launch.click(); }
+          return;
+        }
+
         const mode = btn.getAttribute("data-ai-mode") || "rewrite";
         const content = aiInput.value.trim();
         if (!content) {
@@ -1271,10 +1692,20 @@ document.addEventListener('DOMContentLoaded', function(){
   document.addEventListener('scroll', hidePreview, true);
 });
 
-// Global share chooser: when `.btn-share` is clicked, prompt WhatsApp or Instagram
+// Global share chooser: when `.btn-share` is clicked, prompt share destinations
 (function(){
   function openWhatsApp(text){
     const url = 'https://wa.me/?text=' + encodeURIComponent(text);
+    window.open(url, '_blank');
+  }
+
+  function openX(text, pageUrl){
+    const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(pageUrl);
+    window.open(url, '_blank');
+  }
+
+  function openLinkedIn(pageUrl){
+    const url = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(pageUrl);
     window.open(url, '_blank');
   }
 
@@ -1305,12 +1736,17 @@ document.addEventListener('DOMContentLoaded', function(){
 
     const wa = document.createElement('button'); wa.className = 'btn'; wa.textContent = 'WhatsApp'; wa.style.display='block'; wa.style.width='100%'; wa.style.marginBottom='8px'; wa.addEventListener('click', ()=>{ openWhatsApp(text); modal.remove(); }); box.appendChild(wa);
 
+    const x = document.createElement('button'); x.className = 'btn btn--ghost'; x.textContent = 'X (Twitter)'; x.style.display='block'; x.style.width='100%'; x.style.marginBottom='8px'; x.addEventListener('click', ()=>{ openX(text, pageUrl); modal.remove(); }); box.appendChild(x);
+
+    const li = document.createElement('button'); li.className = 'btn btn--ghost'; li.textContent = 'LinkedIn'; li.style.display='block'; li.style.width='100%'; li.style.marginBottom='8px'; li.addEventListener('click', ()=>{ openLinkedIn(pageUrl); modal.remove(); }); box.appendChild(li);
+
     const ig = document.createElement('button'); ig.className = 'btn'; ig.textContent = 'Instagram'; ig.style.display='block'; ig.style.width='100%'; ig.style.marginBottom='8px'; ig.addEventListener('click', async ()=>{ await shareToInstagram(text, pageUrl); modal.remove(); }); box.appendChild(ig);
 
     const cancel = document.createElement('button'); cancel.className = 'btn btn--ghost'; cancel.textContent = 'Cancel'; cancel.style.display='block'; cancel.style.width='100%'; cancel.addEventListener('click', ()=>modal.remove()); box.appendChild(cancel);
 
     modal.appendChild(box);
     document.body.appendChild(modal);
+    modal.addEventListener('click', (e)=>{ if (e.target === modal) modal.remove(); });
   }
 
   document.addEventListener('click', function(ev){

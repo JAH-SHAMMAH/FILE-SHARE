@@ -6,6 +6,15 @@
 <section class="container" style="max-width:980px;margin-top:18px;">
   <h1 style="margin-bottom:8px;">My Classrooms</h1>
   {% set is_teacher = request.state.current_user and request.state.current_user.site_role == 'teacher' %}
+  <div class="card" style="padding:14px;border-radius:12px;margin-bottom:14px;">
+    <h2 style="margin:0 0 6px 0;font-size:16px;">Join a classroom</h2>
+    <p class="muted" style="margin:0 0 10px 0;">Enter the class join code provided by your teacher.</p>
+    <div id="join-classroom-message" class="muted" style="margin:0 0 10px 0;display:none;"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <input id="join-classroom-code" placeholder="e.g. AB12CD" style="flex:1;min-width:180px;padding:8px 10px;border-radius:999px;border:1px solid var(--border);font-size:14px;text-transform:uppercase;" />
+      <button id="join-classroom-btn" class="btn" type="button" style="padding:8px 14px;font-size:14px;border-radius:999px;">Join classroom</button>
+    </div>
+  </div>
   {% if classrooms and classrooms|length %}
     <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
       {% for c in classrooms %}
@@ -39,12 +48,11 @@
     </div>
   {% endif %}
 </section>
-{% endblock %}
 
 <!-- Create classroom modal (teacher) -->
 <div id="create-classroom-modal" class="modal" role="dialog" aria-hidden="true" style="display:none;position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
   <div class="modal__panel" style="background:#fff;padding:18px;border-radius:10px;max-width:520px;width:96%;box-shadow:0 6px 20px rgba(0,0,0,0.2);">
-    <h3 style="margin-top:0">Create classroom</h3>
+    <h3 style="margin-top:0;color:#111827;">Create classroom</h3>
     <form id="create-classroom-form" method="post" action="/teacher/classrooms/new">
       <div style="margin-bottom:8px;"><label>Name<br><input name="name" required style="width:100%;padding:8px;"/></label></div>
       <div style="margin-bottom:8px;"><label>Code (optional)<br><input name="code" style="width:100%;padding:8px;"/></label></div>
@@ -56,7 +64,9 @@
     </form>
   </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 (() => {
   const openBtn = document.getElementById('create-classroom-btn');
@@ -99,5 +109,42 @@
       }
     });
   }
+
+  const joinBtn = document.getElementById('join-classroom-btn');
+  const joinInput = document.getElementById('join-classroom-code');
+  const joinMsg = document.getElementById('join-classroom-message');
+  if (joinBtn && joinInput){
+    joinBtn.addEventListener('click', async ()=>{
+      const code = (joinInput.value || '').trim();
+      if (joinMsg){ joinMsg.style.display = 'none'; joinMsg.textContent = ''; joinMsg.style.color = ''; }
+      if (!code){
+        if (joinMsg){ joinMsg.textContent = 'Enter a join code.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+        return;
+      }
+      try{
+        const res = await fetch('/api/classrooms/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        if (!res.ok){
+          const j = await res.json().catch(()=>({detail:'Join failed'}));
+          if (joinMsg){ joinMsg.textContent = j.detail || 'Join failed'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+          return;
+        }
+        const j = await res.json().catch(()=>({}));
+        if (j.classroom_id){
+          if (joinMsg){ joinMsg.textContent = j.message || 'Joined classroom.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#16a34a'; }
+          window.location.href = `/classrooms/${j.classroom_id}/view`;
+        } else {
+          if (joinMsg){ joinMsg.textContent = j.message || 'Joined classroom.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#16a34a'; }
+          window.location.reload();
+        }
+      }catch(e){
+        if (joinMsg){ joinMsg.textContent = 'Network error.'; joinMsg.style.display = 'block'; joinMsg.style.color = '#b91c1c'; }
+      }
+    });
+  }
 })();
 </script>
+{% endblock %}

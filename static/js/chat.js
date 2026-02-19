@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', function(){
   let meId = null;
   let otherId = null;
   let otherUsername = null;
+  let typingTimer = null;
+  let isTyping = false;
+  let lastReadId = null;
+  let typingClearTimer = null;
   const CHAT_THEME_KEY = 'slideshare_chat_theme';
 
   function qs(sel, el) { return (el||document).querySelector(sel); }
@@ -11,6 +15,9 @@ document.addEventListener('DOMContentLoaded', function(){
   function openModal(userId, username){
     otherId = userId || null;
     otherUsername = username || null;
+    lastReadId = null;
+    setTypingIndicator(false, '');
+    updateReadState(null);
     const displayName = username || 'User';
     qs('#chat-username').textContent = displayName;
     // update avatar initials
@@ -87,7 +94,10 @@ document.addEventListener('DOMContentLoaded', function(){
     if (recBlock){
       recBlock.style.display = otherId ? 'none' : 'block';
     }
-    qs('#chat-modal').style.display = 'block';
+    qs('#chat-modal').style.display = 'flex';
+    try {
+      document.dispatchEvent(new CustomEvent('chat:opened', { detail: { otherId: otherId, otherUsername: otherUsername } }));
+    } catch (err) { /* ignore */ }
     connectSocket();
     loadHistory();
     qs('#chat-input').focus();
@@ -98,6 +108,26 @@ document.addEventListener('DOMContentLoaded', function(){
     disconnectSocket();
     otherId = null;
     otherUsername = null;
+    lastReadId = null;
+    setTypingIndicator(false, '');
+    updateReadState(null);
+    try {
+      document.dispatchEvent(new CustomEvent('chat:closed'));
+    } catch (err) { /* ignore */ }
+  }
+
+  async function clearChat(){
+    if (!otherId) return;
+    const confirmed = window.confirm('Clear this chat for you? This will delete the conversation history.');
+    if (!confirmed) return;
+    try{
+      const res = await fetch(`/api/messages/${otherId}/clear`, { method: 'POST' });
+      if (!res.ok) throw new Error('clear failed');
+      const container = qs('#chat-messages');
+      if (container) container.innerHTML = '';
+    }catch(e){
+      alert('Failed to clear chat.');
+    }
   }
 
   async function loadHistory(){
@@ -110,6 +140,20 @@ document.addEventListener('DOMContentLoaded', function(){
       container.innerHTML = '';
       msgs.reverse().forEach(m => appendMessage(m));
       container.scrollTop = container.scrollHeight;
+      // infer last read receipt for messages I sent
+      const myIdEl = qs('[data-my-id]');
+      const myId = myIdEl ? parseInt(myIdEl.getAttribute('data-my-id')) : null;
+      if (myId){
+        const readMsgs = msgs.filter(m => m.from === myId && m.read);
+        if (readMsgs.length){
+          const latest = readMsgs.reduce((acc, cur) => (cur.id > acc.id ? cur : acc), readMsgs[0]);
+          lastReadId = latest.id;
+          updateReadState(lastReadId);
+        } else {
+          updateReadState(null);
+        }
+      }
+      await markThreadRead();
     }catch(e){ console.warn('loadHistory error', e); }
   }
 
@@ -121,6 +165,10 @@ document.addEventListener('DOMContentLoaded', function(){
     if (sel) sel.style.display = 'none';
     const headerName = qs('#chat-username');
     if (headerName) headerName.textContent = usernameLabel || ('User #' + userId);
+    otherUsername = usernameLabel || ('User #' + userId);
+    try {
+      document.dispatchEvent(new CustomEvent('chat:opened', { detail: { otherId: otherId, otherUsername: otherUsername } }));
+    } catch (err) { /* ignore */ }
     loadHistory();
   }
 
@@ -133,6 +181,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (myIdEl) myId = parseInt(myIdEl.getAttribute('data-my-id'));
     const isMe = myId ? (m.from === myId) : (m.from !== otherId);
     el.className = 'chat-msg ' + (isMe ? 'me' : 'other');
+    if (m.id) el.dataset.messageId = m.id;
 
     // header with avatar, name, and role badge
     const header = document.createElement('div');
@@ -241,6 +290,82 @@ document.addEventListener('DOMContentLoaded', function(){
     container.scrollTop = container.scrollHeight;
   }
 
+  function appendSystemMessage(text){
+    const container = qs('#chat-messages');
+    if (!container || !text) return;
+    const el = document.createElement('div');
+    el.className = 'chat-msg chat-msg--system';
+    const textEl = document.createElement('div');
+    textEl.className = 'chat-msg__text';
+    textEl.textContent = text;
+    el.appendChild(textEl);
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  document.addEventListener('chat:call_log', function(ev){
+    const detail = ev.detail || {};
+    if (!otherId || !detail.peerId) return;
+    if (String(detail.peerId) !== String(otherId)) return;
+    const mediaLabel = detail.media === 'audio' ? 'Audio' : 'Video';
+    const formatDuration = (seconds) => {
+      if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '';
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${String(secs).padStart(2, '0')}`;
+    };
+    let text = '';
+    switch (detail.action){
+      case 'incoming':
+        text = `Incoming ${mediaLabel} call`;
+        break;
+      case 'started':
+        text = `${mediaLabel} call started`;
+        break;
+      case 'connected':
+        text = `${mediaLabel} call connected`;
+        break;
+      case 'rejected':
+        text = `${mediaLabel} call rejected`;
+        break;
+      case 'ended':
+        text = `${mediaLabel} call ended`;
+        break;
+      case 'missed':
+        text = `Missed ${mediaLabel} call`;
+        break;
+      default:
+        text = `${mediaLabel} call update`;
+    }
+    if (detail.action === 'ended'){
+      const duration = formatDuration(detail.durationSeconds);
+      if (duration) text += ` · ${duration}`;
+    }
+    appendSystemMessage(text);
+  });
+
+  function setTypingIndicator(active, label){
+    const typingEl = qs('#chat-typing');
+    if (!typingEl) return;
+    if (active){
+      typingEl.textContent = `${label || 'Someone'} is typing…`;
+      typingEl.style.display = 'block';
+    } else {
+      typingEl.textContent = '';
+      typingEl.style.display = 'none';
+    }
+  }
+
+  function updateReadState(messageId){
+    const readEl = qs('#chat-read-state');
+    if (!readEl) return;
+    if (!messageId){
+      readEl.textContent = '';
+      return;
+    }
+    readEl.textContent = 'Seen';
+  }
+
   function connectSocket(){
     if (!otherId) return;
     // build WS url
@@ -273,16 +398,47 @@ document.addEventListener('DOMContentLoaded', function(){
         if (data.to && data.to === parseInt(qs('[data-my-id]')?.getAttribute('data-my-id'))) {
           // do nothing
         }
+        if (data.from === otherId){
+          markThreadRead();
+        }
       } else if (data.type === 'presence'){
         // optional: show presence
         updatePresenceDot(data.user_id, data.online);
+      } else if (data.type === 'typing'){
+        if (data.from !== otherId) return;
+        if (data.status === 'start'){
+          setTypingIndicator(true, otherUsername || 'User');
+          if (typingClearTimer) clearTimeout(typingClearTimer);
+          typingClearTimer = setTimeout(() => setTypingIndicator(false, ''), 2200);
+        } else {
+          setTypingIndicator(false, '');
+        }
+      } else if (data.type === 'read'){
+        if (data.from !== otherId) return;
+        lastReadId = data.message_id || lastReadId;
+        updateReadState(lastReadId);
       }
     });
     socket.addEventListener('close', ()=>{ console.log('chat socket closed'); socket = null; });
   }
 
+  document.getElementById('chat-clear')?.addEventListener('click', clearChat);
+
   function disconnectSocket(){
     if (socket){ try{ socket.close(); }catch(e){} socket = null; }
+  }
+
+  async function markThreadRead(){
+    if (!otherId) return;
+    try{
+      const res = await fetch('/api/messages/' + otherId + '/read', { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.last_read_id){
+        lastReadId = data.last_read_id;
+        updateReadState(lastReadId);
+      }
+    }catch(e){ }
   }
 
   // chat-only light/dark theme toggle
@@ -392,6 +548,27 @@ document.addEventListener('DOMContentLoaded', function(){
         input.value = '';
       }
     });
+  });
+
+  qs('#chat-input')?.addEventListener('input', function(){
+    if (!otherId || !socket || socket.readyState !== 1) return;
+    if (!isTyping){
+      isTyping = true;
+      try{ socket.send(JSON.stringify({ action: 'typing', to: otherId, status: 'start' })); }catch(e){}
+    }
+    if (typingTimer) clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      isTyping = false;
+      try{ socket.send(JSON.stringify({ action: 'typing', to: otherId, status: 'stop' })); }catch(e){}
+    }, 1200);
+  });
+
+  qs('#chat-input')?.addEventListener('blur', function(){
+    if (!otherId || !socket || socket.readyState !== 1) return;
+    if (isTyping){
+      isTyping = false;
+      try{ socket.send(JSON.stringify({ action: 'typing', to: otherId, status: 'stop' })); }catch(e){}
+    }
   });
 
   // support submitting when recipient input supplied and otherId not set

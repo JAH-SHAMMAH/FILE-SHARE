@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Cover placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#eef2ff" />
+      <stop offset="1" stop-color="#e0f2fe" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" rx="28" fill="url(#bg)" />
+  <rect x="90" y="90" width="1020" height="495" rx="20" fill="#ffffff" stroke="#e2e8f0" />
+  <rect x="160" y="170" width="520" height="30" rx="15" fill="#dbeafe" />
+  <rect x="160" y="225" width="760" height="18" rx="9" fill="#e2e8f0" />
+  <rect x="160" y="260" width="690" height="18" rx="9" fill="#e2e8f0" />
+  <rect x="160" y="320" width="400" height="140" rx="16" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="600" y="540" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" fill="#94a3b8">Cover preview</text>
+</svg>

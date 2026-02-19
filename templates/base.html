@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" href="{{ request.url_for('static', path='favicon.png') }}" />
-  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}?v=20260204" />
   <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
   {% block head %}{% endblock %}
 </head>
@@ -24,12 +24,41 @@
 
       <nav class="header-nav">
         <div class="nav-cta" style="display:flex;align-items:center;gap:10px;">
-          <div class="nav-link small" title="Language" style="position:relative;">
-            <span>🌐 {{ ui_lang|upper }}</span>
-            <div class="lang-dropdown">
-              <a href="/set-language?lang=en">English</a>
-              <a href="/set-language?lang=fr">Français</a>
-              <a href="/set-language?lang=es">Español</a>
+          {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f310.svg' %}
+          {% if ui_lang == 'en' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1fa-1f1f8.svg' %}
+          {% elif ui_lang == 'es' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1ea-1f1f8.svg' %}
+          {% elif ui_lang == 'fr' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1eb-1f1f7.svg' %}
+          {% elif ui_lang == 'pt' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1e7-1f1f7.svg' %}
+          {% elif ui_lang == 'de' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1e9-1f1ea.svg' %}
+          {% elif ui_lang == 'ar' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1f8-1f1e6.svg' %}
+          {% elif ui_lang == 'hi' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1ee-1f1f3.svg' %}
+          {% elif ui_lang == 'zh' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1e8-1f1f3.svg' %}
+          {% elif ui_lang == 'ja' %}
+            {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1ef-1f1f5.svg' %}
+          {% endif %}
+          <div class="nav-link small lang-switcher" id="lang-switcher" title="Language" style="position:relative;">
+            <button class="lang-button" type="button" aria-haspopup="true" aria-expanded="false">
+              <img class="lang-flag" id="lang-flag" alt="" src="{{ lang_flag_img }}" />
+              <span class="lang-code" id="lang-code">{{ ui_lang|upper }}</span>
+            </button>
+            <div class="lang-dropdown" id="lang-dropdown">
+              <button type="button" data-lang="en" data-flag="🇺🇸" data-flag-alt="🇬🇧">English</button>
+              <button type="button" data-lang="es" data-flag="🇪🇸">Español</button>
+              <button type="button" data-lang="fr" data-flag="🇫🇷">Français</button>
+              <button type="button" data-lang="pt" data-flag="🇧🇷">Português</button>
+              <button type="button" data-lang="de" data-flag="🇩🇪">Deutsch</button>
+              <button type="button" data-lang="ar" data-flag="🇸🇦">العربية</button>
+              <button type="button" data-lang="hi" data-flag="🇮🇳">हिन्दी</button>
+              <button type="button" data-lang="zh" data-flag="🇨🇳">中文</button>
+              <button type="button" data-lang="ja" data-flag="🇯🇵">日本語</button>
             </div>
           </div>
           {% if ui_lang == 'fr' %}
@@ -56,6 +85,84 @@
             {% set t_contact = 'Contacto' %}
             {% set t_terms = 'Términos' %}
             {% set t_privacy = 'Privacidad' %}
+          {% elif ui_lang == 'pt' %}
+            {% set t_featured = 'Em destaque' %}
+            {% set t_teaching = 'Ensino' %}
+            {% set t_classrooms = 'Turmas' %}
+            {% set t_materials = 'Materiais' %}
+            {% set t_messages = 'Mensagens' %}
+            {% set t_upload = 'Enviar' %}
+            {% set t_login = 'Entrar' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'Ajuda' %}
+            {% set t_contact = 'Contato' %}
+            {% set t_terms = 'Termos' %}
+            {% set t_privacy = 'Privacidade' %}
+          {% elif ui_lang == 'de' %}
+            {% set t_featured = 'Highlights' %}
+            {% set t_teaching = 'Unterrichten' %}
+            {% set t_classrooms = 'Klassen' %}
+            {% set t_materials = 'Materialien' %}
+            {% set t_messages = 'Nachrichten' %}
+            {% set t_upload = 'Hochladen' %}
+            {% set t_login = 'Anmelden' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'Hilfe' %}
+            {% set t_contact = 'Kontakt' %}
+            {% set t_terms = 'Bedingungen' %}
+            {% set t_privacy = 'Datenschutz' %}
+          {% elif ui_lang == 'ar' %}
+            {% set t_featured = 'مميز' %}
+            {% set t_teaching = 'التعليم' %}
+            {% set t_classrooms = 'الفصول' %}
+            {% set t_materials = 'المواد' %}
+            {% set t_messages = 'الرسائل' %}
+            {% set t_upload = 'رفع' %}
+            {% set t_login = 'تسجيل الدخول' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'مساعدة' %}
+            {% set t_contact = 'اتصال' %}
+            {% set t_terms = 'الشروط' %}
+            {% set t_privacy = 'الخصوصية' %}
+          {% elif ui_lang == 'hi' %}
+            {% set t_featured = 'विशेष' %}
+            {% set t_teaching = 'शिक्षण' %}
+            {% set t_classrooms = 'कक्षाएँ' %}
+            {% set t_materials = 'सामग्री' %}
+            {% set t_messages = 'संदेश' %}
+            {% set t_upload = 'अपलोड' %}
+            {% set t_login = 'लॉगिन' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'मदद' %}
+            {% set t_contact = 'संपर्क' %}
+            {% set t_terms = 'शर्तें' %}
+            {% set t_privacy = 'गोपनीयता' %}
+          {% elif ui_lang == 'zh' %}
+            {% set t_featured = '精选' %}
+            {% set t_teaching = '教学' %}
+            {% set t_classrooms = '课堂' %}
+            {% set t_materials = '资料' %}
+            {% set t_messages = '消息' %}
+            {% set t_upload = '上传' %}
+            {% set t_login = '登录' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = '帮助' %}
+            {% set t_contact = '联系' %}
+            {% set t_terms = '条款' %}
+            {% set t_privacy = '隐私' %}
+          {% elif ui_lang == 'ja' %}
+            {% set t_featured = '注目' %}
+            {% set t_teaching = '教育' %}
+            {% set t_classrooms = '教室' %}
+            {% set t_materials = '教材' %}
+            {% set t_messages = 'メッセージ' %}
+            {% set t_upload = 'アップロード' %}
+            {% set t_login = 'ログイン' %}
+            {% set t_signup = 'Start' %}
+            {% set t_help = 'ヘルプ' %}
+            {% set t_contact = 'お問い合わせ' %}
+            {% set t_terms = '利用規約' %}
+            {% set t_privacy = 'プライバシー' %}
           {% else %}
             {% set t_featured = 'Featured' %}
             {% set t_teaching = 'Teaching' %}
@@ -73,7 +180,7 @@
 
           {% set cu = request.state.current_user if request and request.state else None %}
             {% if cu %}
-            <a class="nav-link" href="{{ url_for('student_classrooms') }}">My Classrooms</a>
+            <a class="nav-link" href="{{ url_for('student_spaces') }}">My Spaces</a>
             {% if request.state.current_user and request.state.current_user.site_role != 'teacher' %}
             <a class="nav-link" href="{{ url_for('student_materials') }}">Materials</a>
             {% endif %}
@@ -84,7 +191,6 @@
               {{ t_messages }}
               <span id="messages-badge" style="display:none;margin-left:4px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;">0</span>
             </a>
-            <a class="nav-link" href="{{ url_for('upload') }}">{{ t_upload }}</a>
           {% else %}
             <a class="nav-link" href="{{ url_for('about') }}">About us</a>
             <a class="nav-link" href="{{ url_for('upload') }}">{{ t_upload }}</a>
@@ -98,9 +204,6 @@
         {% if request.state.current_user %}
           <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
             <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
-          </button>
-          <button class="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
-            <svg class="chevron" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7l5 6 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <button id="notif-launcher" class="icon-btn" title="Notifications" style="position:relative;margin-left:6px">🔔<span id="notif-badge" style="position:absolute;right:-6px;top:-6px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;display:none">0</span></button>
           <div class="profile-menu">
@@ -129,7 +232,7 @@
             {% else %}
             <a class="profile-menu__item" href="{{ url_for('spotify_login') }}">Connect Spotify</a>
             {% endif %}
-            <a class="profile-menu__item" href="#settings">Account Settings</a>
+            <a class="profile-menu__item" href="{{ url_for('account_settings_get') }}">Account Settings</a>
             <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
             <div class="profile-menu__divider"></div>
             <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
@@ -147,18 +250,7 @@
                 <li><a href="{{ url_for('account_settings_get') }}#role-settings">Change role / view</a></li>
               </ul>
             </div>
-            <div class="hamburger-menu__divider"></div>
             {% endif %}
-
-            <div class="hamburger-menu__section">
-              <h4>Browse by category</h4>
-              <ul>
-                <li><a href="/search">All categories</a></li>
-                {% for c in request.state.categories or [] %}
-                  <li><a href="/search?category={{ c|url_encode }}">{{ c }}</a></li>
-                {% endfor %}
-              </ul>
-            </div>
           </div>
         </div>
         {% endif %}
@@ -170,10 +262,12 @@
   {% set current_path = request.url.path if request and request.url else '' %}
   {% if request.state.categories and current_path == '/featured' %}
   <section class="container category-bar" style="margin-top:8px;">
-    <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:nowrap;">
+      {% set removed_cats = ['for you','business','mobile','marketing','technology','school','society'] %}
+      {% set suggested = ['For You'] %}
+      {% set suggested_lower = suggested | map('lower') | list %}
+      {% if suggested|length %}
       <div class="suggested-chips">
-        {% set suggested = ['For You','Business','Mobile','Marketing','Technology'] %}
-        {% set suggested_lower = suggested | map('lower') | list %}
         {% for s in suggested %}
           {% set is_for_you = (s == 'For You') %}
           {% if is_for_you %}
@@ -185,20 +279,43 @@
           {% endif %}
         {% endfor %}
       </div>
+      {% endif %}
       <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;">
         <div id="category-scroll" class="category-scroll" role="list">
           {% set ns = namespace(seen=[]) %}
+          {% set visible_limit = 7 %}
           {% for c in request.state.categories or [] %}
             {% set c_lower = c|lower %}
-            {% if c_lower not in suggested_lower and c_lower not in ns.seen %}
-              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if c == request.query_params.get('category') %} active{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
+            {% if c_lower not in suggested_lower and c_lower not in removed_cats and c_lower not in ns.seen %}
+              {% set is_active = (c == request.query_params.get('category')) %}
+              {% set hide_by_default = (loop.index > visible_limit) and (not is_active) %}
+              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if is_active %} active{% endif %}{% if hide_by_default %} js-extra-category hidden-category-chip{% endif %}" href="/search?category={{ c|url_encode }}" {% if hide_by_default %}style="display:none;"{% endif %}>{{ c }}</a>
               {% set _ = ns.seen.append(c_lower) %}
             {% endif %}
           {% endfor %}
         </div>
+        {% if ns.seen|length > visible_limit %}
+          <button id="toggle-all-categories" type="button" class="btn btn--ghost" style="padding:0;border:none;background:transparent;text-decoration:underline;">Show all categories</button>
+        {% endif %}
       </div>
     </div>
   </section>
+  <script>
+    (function () {
+      const toggleBtn = document.getElementById('toggle-all-categories');
+      if (!toggleBtn) return;
+      const extraChips = Array.from(document.querySelectorAll('.js-extra-category'));
+      if (!extraChips.length) return;
+      let expanded = false;
+      toggleBtn.addEventListener('click', function () {
+        expanded = !expanded;
+        extraChips.forEach(function (chip) {
+          chip.style.display = expanded ? '' : 'none';
+        });
+        toggleBtn.textContent = expanded ? 'Show fewer categories' : 'Show all categories';
+      });
+    })();
+  </script>
   {% endif %}
 
   <main class="container" style="padding: var(--space-lg) 0;">
@@ -233,8 +350,6 @@
     </script>
   {% endif %}
   {% if request.state.current_user %}
-  <!-- Floating chat launcher -->
-  <button id="chat-launcher" title="Open chat" class="chat-launcher">💬</button>
   <!-- Notification panel -->
   <div id="notif-panel" class="chat-modal" style="display:none;">
     <div class="chat-modal__backdrop"></div>
@@ -264,6 +379,9 @@
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <button id="chat-theme-toggle" class="icon-btn" title="Coffee mode">☕ Coffee</button>
+          <button id="chat-clear" class="icon-btn" title="Clear chat">🗑</button>
+          <button id="chat-audio-call" class="icon-btn" title="Audio call">🎧</button>
+          <button id="chat-video-call" class="icon-btn" title="Video call">📹</button>
           <button id="chat-close" class="icon-btn">✕</button>
         </div>
       </header>
@@ -277,10 +395,61 @@
         </div>
       </div>
       <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-status">
+        <div id="chat-typing" class="chat-typing" style="display:none;"></div>
+        <div id="chat-read-state" class="chat-read"></div>
+      </div>
       <form id="chat-form" class="chat-form" enctype="multipart/form-data">
         <input id="chat-input" type="text" placeholder="Write a message..." autocomplete="off" />
         <button class="btn" type="submit">Send</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Direct call modal -->
+  <div id="direct-call-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel direct-call-panel">
+      <header class="chat-header">
+        <div class="chat-header__title">Direct call</div>
+        <button id="direct-call-close" class="icon-btn">✕</button>
+      </header>
+      <div class="direct-call-body">
+        <div id="direct-call-status" class="muted" style="margin-bottom:10px;">Connecting...</div>
+        <div class="direct-call-videos">
+          <video id="direct-call-remote" autoplay playsinline></video>
+          <video id="direct-call-local" autoplay playsinline muted></video>
+        </div>
+      </div>
+      <div class="direct-call-controls">
+        <button id="direct-call-accept" class="btn">Accept</button>
+        <button id="direct-call-reject" class="btn btn--ghost">Reject</button>
+        <button id="direct-call-end" class="btn btn--ghost">End call</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Space meeting modal -->
+  <div id="space-meeting-modal" class="chat-modal" style="display:none;">
+    <div class="chat-modal__backdrop"></div>
+    <div class="chat-modal__panel space-meeting-panel">
+      <header class="chat-header">
+        <div class="chat-header__title" id="space-meeting-title">Space meeting</div>
+        <button id="space-meeting-close" class="icon-btn">✕</button>
+      </header>
+      <div class="space-meeting-body">
+        <div id="space-video-grid" class="space-video-grid"></div>
+        <aside class="space-meeting-sidebar">
+          <div class="space-meeting-list-title">Participants</div>
+          <ul id="space-participants-list" class="space-participants-list"></ul>
+        </aside>
+      </div>
+      <div class="space-meeting-controls">
+        <button id="meeting-toggle-mic" class="btn btn--ghost">Mute</button>
+        <button id="meeting-toggle-camera" class="btn btn--ghost">Camera off</button>
+        <button id="meeting-share-screen" class="btn btn--ghost">Share screen</button>
+        <button id="meeting-leave" class="btn">Leave meeting</button>
+      </div>
     </div>
   </div>
   {% endif %}
@@ -340,6 +509,7 @@
   </div>
   <!-- Toast container for UI feedback -->
   <div id="toast-container" aria-live="polite" aria-atomic="true" style="position:fixed;right:16px;bottom:18px;z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
+  <script src="{{ request.url_for('static', path='js/video_calls.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

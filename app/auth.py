@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from .models import User
 from .database import engine
 from dotenv import load_dotenv
-from .models import Membership, Classroom
+from .models import Membership, Space
 
 load_dotenv()
 
@@ -131,21 +131,25 @@ def get_current_user_optional(request: Request = None, token: Optional[str] = No
         return get_user_by_username(username, session)
 
 
-    def get_membership(session: Session, user_id: int, classroom_id: int) -> Optional[Membership]:
-        stmt = select(Membership).where((Membership.user_id == user_id) & (Membership.classroom_id == classroom_id))
-        return session.exec(stmt).first()
+def get_membership(session: Session, user_id: int, space_id: int) -> Optional[Membership]:
+    stmt = select(Membership).where(
+        (Membership.user_id == user_id) & (Membership.space_id == space_id)
+    )
+    return session.exec(stmt).first()
 
 
-    def require_role(classroom_id: int, allowed_roles: List[str] = None):
-        """Return a dependency that ensures the current user has a membership with one of the allowed roles."""
+def require_role(space_id: int, allowed_roles: List[str] = None):
+    """Return a dependency that ensures the current user has a membership with one of the allowed roles."""
 
-        def _dep(current_user: User = Depends(get_current_user)):
-            with Session(engine) as session:
-                m = get_membership(session, current_user.id, classroom_id)
-                if not m:
-                    raise HTTPException(status_code=403, detail="Not a member of this classroom")
-                if allowed_roles and m.role not in allowed_roles:
-                    raise HTTPException(status_code=403, detail="Insufficient role for this action")
-                return m
+    def _dep(current_user: User = Depends(get_current_user)):
+        with Session(engine) as session:
+            m = get_membership(session, current_user.id, space_id)
+            if not m:
+                raise HTTPException(status_code=403, detail="Not a member of this space")
+            if allowed_roles and m.role not in allowed_roles:
+                raise HTTPException(
+                    status_code=403, detail="Insufficient role for this action"
+                )
+            return m
 
-        return _dep
+    return _dep

@@ -5,41 +5,106 @@
 {% block content %}
 <div class="container content-card">
   <h2>Materials from your teachers</h2>
-  <p class="muted" style="margin-bottom:12px;font-size:13px;">Presentations uploaded by teachers from the classrooms you are in.</p>
+  <p class="muted" style="margin-bottom:10px;font-size:13px;">Classroom-shared presentations, library uploads, and assignments from your teachers.</p>
 
-  {% if results %}
-  <div class="grid grid--cards">
-    {% for r in results %}
-    <article class="card" data-pid="{{ r.id }}">
-      {% set is_pdf = r.filename and r.filename.lower().endswith('.pdf') %}
-      {% set slide_thumb = '/presentations/' ~ r.id ~ '/slide/0' %}
-      {% set thumb_pdf = '/download/' ~ r.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-      {% set cover_or_pdf = r.cover_url or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
+  <h3 style="margin-top:12px;">Shared presentations</h3>
+  {% if presentations %}
+  <div class="scroll-row" data-scroll-row>
+    <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+    <div class="grid grid--cards scroll-row__track" data-scroll-track>
+    {% for p in presentations %}
+    <article class="card" data-pid="{{ p.id }}">
+      {% set owner = teachers_by_id.get(p.owner_id) if teachers_by_id else None %}
+      {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
+      {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
+      {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
+      {% set cover_or_pdf = (p.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
 
-      <a class="card__link" href="{{ url_for('view_presentation', presentation_id=r.id) }}">
-        <div class="card__thumb" style="position:relative;">
-          {% if is_pdf %}
-          <iframe class="thumb-frame" src="{{ cover_or_pdf }}" loading="lazy"></iframe>
-          {% else %}
-          <img src="{{ slide_thumb }}" alt="{{ r.title }}" loading="lazy" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src=this.dataset.placeholder" />
-          {% endif %}
+      <a class="card__thumb" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
+        {% if is_pdf %}
+        <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url|public_media_url or '' }}">
+          <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
+          <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
         </div>
+        {% else %}
+        <img src="{{ slide_thumb }}" alt="{{ p.title }}" loading="lazy" data-cover="{{ p.cover_url|public_media_url or '' }}" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='cover-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
+        {% endif %}
+      </a>
+
+      <a class="card__link" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
         <div class="card__body">
-          <h4>{{ r.title }}</h4>
-          <p class="muted">by&nbsp;{% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a> <span class="role-badge role-badge--teacher">★</span>{% else %}Unknown{% endif %}</p>
-          <p class="muted" style="margin-top:6px;">
-            {% if r.owner_presentation_count is defined %}<strong>{{ r.owner_presentation_count }}</strong> presentations{% endif %}
-            {% if r.views is defined %} · <strong>{{ r.views }}</strong> views{% endif %}
-            {% if r.likes_count is defined %} · <strong>{{ r.likes_count }}</strong> likes{% endif %}
-            <span class="card__saved" title="Saved count" data-id="{{ r.id }}">⭐ {{ r.bookmarks_count or 0 }}</span>
-          </p>
+          <h4>{{ p.title }}</h4>
+          <p class="muted">by&nbsp;{% if owner %}<a href="/users/{{ owner.username }}">{{ owner.username }}</a> <span class="role-badge role-badge--{{ (owner.site_role|default('passerby'))|lower }}">★</span>{% else %}Unknown{% endif %}</p>
         </div>
       </a>
     </article>
     {% endfor %}
+    </div>
+    <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
   </div>
   {% else %}
-  <div class="empty">No materials from your teachers yet.</div>
+  <div class="empty">No classroom-shared presentations yet.</div>
+  {% endif %}
+
+  <h3 style="margin-top:18px;">Library uploads</h3>
+  {% if library_items %}
+  <ul class="list" style="margin-top:10px;display:grid;gap:8px;">
+    {% for item in library_items %}
+    <li class="card" style="padding:10px 12px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">{{ item.title or item.filename or ('Item #' ~ item.id) }}</div>
+          <div class="muted" style="font-size:12px;">
+            {% set cls = classrooms_by_id.get(item.classroom_id) if classrooms_by_id else None %}
+            {{ cls.name if cls else 'Classroom' }} · {{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '' }}
+          </div>
+        </div>
+        <div>
+          {% if item.presentation_id %}
+          <a class="btn btn--ghost" href="/presentations/{{ item.presentation_id }}">Open</a>
+          {% elif item.filename %}
+          <a class="btn btn--ghost" href="/download/{{ item.filename }}">Download</a>
+          {% endif %}
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">No library uploads yet.</div>
+  {% endif %}
+
+  <h3 style="margin-top:18px;">Assignments</h3>
+  {% if assignments %}
+  <ul class="list" style="margin-top:10px;display:grid;gap:8px;">
+    {% for a in assignments %}
+    {% set st = assignment_status_by_id.get(a.id) if assignment_status_by_id else None %}
+    {% set cls = classrooms_by_id.get(a.classroom_id) if classrooms_by_id else None %}
+    <li class="card" style="padding:12px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="min-width:220px;">
+          <div style="font-weight:700;">{{ a.title }}</div>
+          {% if a.description %}<div class="muted" style="margin-top:4px;">{{ a.description }}</div>{% endif %}
+          <div class="muted" style="font-size:12px;margin-top:4px;">
+            {{ cls.name if cls else 'Classroom' }}
+            {% if a.due_date %} · Due {{ a.due_date.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+          </div>
+        </div>
+        <form method="post" action="/assignments/{{ a.id }}/status" style="display:flex;gap:8px;align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <select name="status">
+            <option value="almost" {% if st and st.status == 'almost' %}selected{% endif %}>Almost</option>
+            <option value="done" {% if st and st.status == 'done' %}selected{% endif %}>Done</option>
+            <option value="rebel" {% if st and st.status == 'rebel' %}selected{% endif %}>Rebel</option>
+          </select>
+          <button class="btn btn--ghost" type="submit">Update</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">No assignments yet.</div>
   {% endif %}
 </div>
 {% endblock %}

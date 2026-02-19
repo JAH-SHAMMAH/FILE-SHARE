@@ -19,7 +19,6 @@ class User(SQLModel, table=True):
     spotify_refresh_token: Optional[str] = None
     # persisted site-wide role (passerby|student|teacher|individual)
     site_role: Optional[str] = None
-
     presentations: List["Presentation"] = Relationship(
         back_populates="owner",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
@@ -60,9 +59,13 @@ class Presentation(SQLModel, table=True):
     category_id: Optional[int] = Field(default=None, foreign_key="category.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     views: int = 0
+    downloads: int = 0
     # simple visibility + download controls
     privacy: str = Field(default="public")  # public|private
     allow_download: bool = Field(default=True)
+    ai_title: Optional[str] = None
+    ai_description: Optional[str] = None
+    ai_summary: Optional[str] = None
 
     owner: Optional[User] = Relationship(back_populates="presentations")
     category: Optional[Category] = Relationship(back_populates="presentations")
@@ -154,14 +157,25 @@ class Message(SQLModel, table=True):
 
 
 class ClassroomMessage(SQLModel, table=True):
-    """Group chat message scoped to a classroom.
+    """Legacy group chat message scoped to a classroom (pre-refactor)."""
 
-    Each message belongs to a classroom and has a single sender. All
-    classroom members can view the history when they open the classroom
-    space.
-    """
+    __tablename__ = "classroommessage"
     id: Optional[int] = Field(default=None, primary_key=True)
     classroom_id: int = Field(foreign_key="classroom.id")
+    sender_id: int = Field(foreign_key="user.id")
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    __table_args__ = {"extend_existing": True}
+
+
+class SpaceMessage(SQLModel, table=True):
+    """Group chat message scoped to a space.
+
+    Each message belongs to a space and has a single sender. All
+    space members can view the history when they open the space.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    space_id: int = Field(foreign_key="space.id")
     sender_id: int = Field(foreign_key="user.id")
     content: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -176,6 +190,23 @@ class Bookmark(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Collection(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    name: str = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CollectionItem(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("collection_id", "presentation_id", name="uq_collection_item"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    collection_id: int = Field(foreign_key="collection.id")
+    presentation_id: int = Field(foreign_key="presentation.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class School(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -184,6 +215,22 @@ class School(SQLModel, table=True):
 
 
 class Classroom(SQLModel, table=True):
+    """Legacy classroom table (pre-refactor).
+
+    Kept for backwards compatibility while the app transitions to Spaces.
+    """
+
+    __tablename__ = "classroom"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    school_id: Optional[int] = Field(default=None, foreign_key="school.id")
+    name: str
+    code: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    __table_args__ = {"extend_existing": True}
+
+
+class Space(SQLModel, table=True):
+    __tablename__ = "space"
     id: Optional[int] = Field(default=None, primary_key=True)
     school_id: Optional[int] = Field(default=None, foreign_key="school.id")
     name: str
@@ -192,16 +239,21 @@ class Classroom(SQLModel, table=True):
 
 
 class Membership(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
-    classroom_id: int = Field(foreign_key="classroom.id")
+    # During migration we support both columns; space_id is the preferred field.
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    space_id: Optional[int] = Field(default=None, foreign_key="space.id")
     role: str = Field(default="student")  # student|teacher|admin
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LibraryItem(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
-    classroom_id: int = Field(foreign_key="classroom.id")
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    space_id: Optional[int] = Field(default=None, foreign_key="space.id")
     presentation_id: Optional[int] = Field(default=None, foreign_key="presentation.id")
     title: Optional[str] = None
     filename: Optional[str] = None
@@ -211,8 +263,10 @@ class LibraryItem(SQLModel, table=True):
 
 
 class Assignment(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
-    classroom_id: int = Field(foreign_key="classroom.id")
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    space_id: Optional[int] = Field(default=None, foreign_key="space.id")
     title: str
     description: Optional[str] = None
     due_date: Optional[datetime] = None
@@ -252,8 +306,10 @@ class AssignmentStatus(SQLModel, table=True):
 
 
 class Attendance(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
-    classroom_id: int = Field(foreign_key="classroom.id")
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    space_id: Optional[int] = Field(default=None, foreign_key="space.id")
     user_id: int = Field(foreign_key="user.id")
     date: datetime = Field(default_factory=datetime.utcnow)
     status: str = Field(default="present")  # present|absent|late
@@ -268,9 +324,11 @@ class AIResult(SQLModel, table=True):
 
 
 class StudentAnalytics(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    space_id: Optional[int] = Field(default=None, foreign_key="space.id")
     event_type: str = Field(default="event")  # upload|submission|view|grade|attendance|quiz_result
     details: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

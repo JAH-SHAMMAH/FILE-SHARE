@@ -5,7 +5,35 @@
 {% block content %}
   <section class="container" style="margin-top:18px;max-width:780px;">
     <h1 class="section-title" style="margin-bottom:6px;">Account settings</h1>
-    <p class="muted" style="margin-bottom:16px;">Change how you experience the site by switching roles.</p>
+    <p class="muted" style="margin-bottom:16px;">Manage your profile, preferences, and classroom tools.</p>
+
+    <div class="content-card" style="margin-bottom:18px;">
+      <h2 style="margin:0 0 6px 0;font-size:18px;">Profile</h2>
+      <p class="muted" style="margin:0 0 12px 0;">Update your name, bio, and avatar.</p>
+      <a class="btn" href="/me/edit">Edit profile</a>
+    </div>
+
+    <div class="content-card" style="margin-bottom:18px;">
+      <h2 style="margin:0 0 6px 0;font-size:18px;">Notifications</h2>
+      <p class="muted" style="margin:0 0 12px 0;">Manage classroom invites and activity alerts.</p>
+      <a class="btn btn--ghost" href="/notifications">Open notifications</a>
+    </div>
+
+    <div class="content-card" style="margin-bottom:18px;">
+      <h2 style="margin:0 0 6px 0;font-size:18px;">Language</h2>
+      <p class="muted" style="margin:0 0 12px 0;">Choose your preferred language for the interface.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <a class="btn btn--ghost" href="/set-language?lang=en">English</a>
+        <a class="btn btn--ghost" href="/set-language?lang=fr">Français</a>
+        <a class="btn btn--ghost" href="/set-language?lang=es">Español</a>
+        <a class="btn btn--ghost" href="/set-language?lang=pt">Português</a>
+        <a class="btn btn--ghost" href="/set-language?lang=de">Deutsch</a>
+        <a class="btn btn--ghost" href="/set-language?lang=ar">العربية</a>
+        <a class="btn btn--ghost" href="/set-language?lang=hi">हिन्दी</a>
+        <a class="btn btn--ghost" href="/set-language?lang=zh">中文</a>
+        <a class="btn btn--ghost" href="/set-language?lang=ja">日本語</a>
+      </div>
+    </div>
 
     <div class="content-card" id="role-settings" style="margin-bottom:18px;">
       <h2 style="margin:0 0 6px 0;font-size:18px;">Role &amp; view</h2>
@@ -29,6 +57,12 @@
         </ul>
         <button class="btn" type="submit">Save role</button>
       </form>
+    </div>
+
+    <div class="content-card" style="margin-bottom:18px;">
+      <h2 style="margin:0 0 6px 0;font-size:18px;">Security</h2>
+      <p class="muted" style="margin:0 0 12px 0;">Sign out of your account.</p>
+      <a class="btn btn--ghost" href="{{ url_for('logout') }}">Sign out</a>
     </div>
 
     <p class="muted" style="font-size:13px;">Tip: you can also trigger the full role picker again from the homepage by visiting <a href="/choose-role">/choose-role</a>.</p>

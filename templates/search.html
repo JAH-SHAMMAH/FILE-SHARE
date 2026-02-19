@@ -1,5 +1,57 @@
 {% extends "base.html" %}
 
+{% block head %}
+<style>
+  .search-results-row > article.card.search-card {
+    min-width: 200px;
+    max-width: 200px;
+    height: 310px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .search-card .card__thumb {
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .search-card .card__thumb img,
+  .search-card .card__thumb iframe,
+  .search-card .thumb-frame {
+    height: 128px;
+    border-radius: 10px;
+  }
+
+  .search-card .card__body {
+    padding: 10px 11px 12px;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .search-card .card__body h4 {
+    font-size: 15px;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .search-card .card__body p {
+    font-size: 12px;
+  }
+
+  .search-card .card__body p:last-child {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container content-card">
   <h2>Search results</h2>
@@ -9,31 +61,27 @@
   </form>
 
   {% if results %}
-  <div class="grid grid--cards">
+  <div class="scroll-row" data-scroll-row>
+    <button class="scroll-row__nav prev" data-scroll-prev aria-label="Scroll left">‹</button>
+    <div class="grid grid--cards scroll-row__track search-results-row" data-scroll-track>
     {% for r in results %}
-    <article class="card" data-pid="{{ r.id }}">
+    <article class="card card--wide search-card" data-pid="{{ r.id }}">
       {% set is_pdf = r.filename and r.filename.lower().endswith('.pdf') %}
-      {% set slide_thumb = '/presentations/' ~ r.id ~ '/slide/0' %}
+      {% set slide_thumb = '/media/thumbs/' ~ r.id ~ '/slide_0.png' %}
       {% set thumb_pdf = '/download/' ~ r.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-      {% set cover_or_pdf = r.cover_url or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
+      {% set cover_or_pdf = (r.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='cover-placeholder.svg') %}
 
       <a class="card__link" href="{{ url_for('view_presentation', presentation_id=r.id) }}">
         <div class="card__thumb" style="position:relative;">
           {% if is_pdf %}
           <iframe class="thumb-frame" src="{{ cover_or_pdf }}" loading="lazy"></iframe>
           {% else %}
-          <img src="{{ slide_thumb }}" alt="{{ r.title }}" loading="lazy" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="this.onerror=null;this.src=this.dataset.placeholder" />
+          <img src="{{ slide_thumb }}" alt="{{ r.title }}" loading="lazy" data-fallback="/presentations/{{ r.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" />
           {% endif %}
         </div>
         <div class="card__body">
           <h4>{{ r.title }}</h4>
-          <p class="muted">by&nbsp;{% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a> <span class="role-badge role-badge--passerby">★</span>{% else %}Unknown{% endif %}</p>
-          <p class="muted" style="margin-top:6px;">
-            {% if r.owner_presentation_count is defined %}<strong>{{ r.owner_presentation_count }}</strong> presentations{% endif %}
-            {% if r.views is defined %} · <strong>{{ r.views }}</strong> views{% endif %}
-            {% if r.likes_count is defined %} · <strong>{{ r.likes_count }}</strong> likes{% endif %}
-            <span class="card__saved" title="Saved count" data-id="{{ r.id }}">⭐ {{ r.bookmarks_count or 0 }}</span>
-          </p>
+          <p class="muted">by&nbsp;{% if r.owner_username %}<a href="/users/{{ r.owner_username }}">{{ r.owner_username }}</a> <span class="role-badge role-badge--{{ (r.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}Unknown{% endif %}</p>
         </div>
       </a>
       <button class="card__bookmark" type="button" data-id="{{ r.id }}" aria-label="Save presentation" title="Save for later">
@@ -41,6 +89,8 @@
       </button>
     </article>
     {% endfor %}
+    </div>
+    <button class="scroll-row__nav next" data-scroll-next aria-label="Scroll right">›</button>
   </div>
   {% else %}
   <div class="empty">No results found for "{{ q }}".</div>

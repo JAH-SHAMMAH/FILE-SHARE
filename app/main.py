@@ -1,3 +1,6 @@
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env", override=True)
 from starlette.websockets import WebSocket, WebSocketDisconnect
 try:
     import fitz
@@ -15,6 +18,9 @@ import mimetypes
 
 import os
 import time
+import secrets
+from threading import Lock
+from collections import OrderedDict, deque
 from types import SimpleNamespace
 from urllib.parse import quote, urlencode
 import re
@@ -22,7 +28,7 @@ try:
     import boto3
 except Exception:
     boto3 = None
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, or_, delete
 from sqlalchemy.orm import selectinload
 import redis as _redis
 import shutil
@@ -35,10 +41,25 @@ from fastapi.templating import Jinja2Templates
 
 # create FastAPI app instance
 app = FastAPI()
+# Initialize Jinja2 templates directory (templates/ at repo root is used)
+try:
+    templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '..', 'templates'))
+except Exception:
+    # fallback to a relative templates folder at workspace root
+    templates = Jinja2Templates(directory=os.path.join(os.getcwd(), 'templates'))
+# Register common template filters used across templates
+try:
+    templates.env.filters['url_encode'] = lambda s: quote(str(s) if s is not None else '')
+except Exception:
+    pass
+try:
+    templates.env.filters['humanize_comment_date'] = humanize_comment_date
+except Exception:
+    pass
 from .auth import get_current_user, get_current_user_optional
-from .models import User, Membership, Classroom, Presentation, Category, Message
+from .models import User, Membership, Space, Classroom, Presentation, Category, Message
 from .models import Bookmark, Notification, Activity, Follow, Transaction, LibraryItem
-from .models import ConversionJob, AIResult, Comment, Like, ClassroomMessage, StudentAnalytics, WebhookEvent, Submission, Attendance, School, Assignment, AssignmentStatus, ConsentLog, Tag, PresentationTag
+from .models import ConversionJob, AIResult, Comment, Like, ClassroomMessage, SpaceMessage, StudentAnalytics, WebhookEvent, Submission, Attendance, School, Assignment, AssignmentStatus, ConsentLog, Tag, PresentationTag, Collection, CollectionItem
 from .database import engine, create_db_and_tables
 from .auth import get_password_hash, create_access_token, create_refresh_token, authenticate_user
 from . import oauth
@@ -47,19 +68,90 @@ import uuid
 import hmac
 import hashlib
 import base64
+import io
+import zipfile
+import tempfile
 import smtplib
 import ssl
 import httpx
 from datetime import datetime
 from .humanize import humanize_comment_date
+from .ai_client import chat_completion, get_ai_provider
+
+# Ensure humanize filter is registered after the function is imported
+try:
+    templates.env.filters['humanize_comment_date'] = humanize_comment_date
+except Exception:
+    pass
 
 # basic logger for this module
 logger = logging.getLogger('slideshare')
+
+# AI request controls (in-memory; configure via env)
+AI_RATE_LIMIT_PER_USER = int(os.getenv('AI_RATE_LIMIT_PER_USER', '20'))
+AI_RATE_LIMIT_WINDOW_SEC = int(os.getenv('AI_RATE_LIMIT_WINDOW_SEC', '60'))
+AI_GLOBAL_MAX_INFLIGHT = int(os.getenv('AI_GLOBAL_MAX_INFLIGHT', '4'))
+AI_CACHE_TTL_SEC = int(os.getenv('AI_CACHE_TTL_SEC', '900'))
+AI_CACHE_MAX = int(os.getenv('AI_CACHE_MAX', '200'))
+_ai_lock = Lock()
+_ai_user_requests: Dict[int, deque] = {}
+_ai_inflight = 0
+_ai_cache: OrderedDict = OrderedDict()
+
+
+def _ai_rate_limit_check(user_id: int) -> Optional[int]:
+    now = time.time()
+    with _ai_lock:
+        dq = _ai_user_requests.setdefault(int(user_id), deque())
+        while dq and (now - dq[0]) > AI_RATE_LIMIT_WINDOW_SEC:
+            dq.popleft()
+        if len(dq) >= AI_RATE_LIMIT_PER_USER:
+            retry_after = int(AI_RATE_LIMIT_WINDOW_SEC - (now - dq[0])) + 1
+            return max(retry_after, 1)
+        dq.append(now)
+    return None
+
+
+def _ai_cache_get(key: str) -> Optional[str]:
+    now = time.time()
+    with _ai_lock:
+        item = _ai_cache.get(key)
+        if not item:
+            return None
+        ts, val = item
+        if (now - ts) > AI_CACHE_TTL_SEC:
+            try:
+                del _ai_cache[key]
+            except Exception:
+                pass
+            return None
+        _ai_cache.move_to_end(key)
+        return val
+
+
+def _ai_cache_set(key: str, val: str) -> None:
+    with _ai_lock:
+        _ai_cache[key] = (time.time(), val)
+        _ai_cache.move_to_end(key)
+        while len(_ai_cache) > AI_CACHE_MAX:
+            _ai_cache.popitem(last=False)
+
+
+def _compute_creator_badges(site_role: Optional[str], total_views: int, total_downloads: int, followers: int, recent_views: int = 0) -> list[str]:
+    badges: list[str] = []
+    if (site_role or "").lower() == "teacher":
+        badges.append("Top Teacher")
+    if total_views >= 2000 or recent_views >= 300:
+        badges.append("Trending Creator")
+    if total_downloads >= 300 or followers >= 150:
+        badges.append("Exam Expert")
+    return badges
 
 # Paystack / payments defaults (override via env)
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 PAYSTACK_AMOUNT_KOBO = int(os.getenv('PAYSTACK_AMOUNT_KOBO', '0'))
+COFFEE_AMOUNT_KOBO = int(os.getenv('COFFEE_AMOUNT_KOBO', str(PAYSTACK_AMOUNT_KOBO or 0)))
 # Paystack / payments defaults (override via env)
 PAYSTACK_CURRENCY = os.getenv('PAYSTACK_CURRENCY', 'NGN')
 
@@ -71,12 +163,37 @@ SPOTIFY_REDIRECT = os.getenv('SPOTIFY_REDIRECT')
 # Upload directory (module-level default so static analysis sees it)
 UPLOAD_DIR = os.getenv('UPLOAD_DIR', './uploads')
 
+def public_media_url(value: Optional[str]) -> Optional[str]:
+    """Convert filesystem or relative upload paths into public /media URLs."""
+    if not value:
+        return None
+    s = str(value)
+    if s.startswith("http://") or s.startswith("https://") or s.startswith("/"):
+        return s
+    try:
+        p = Path(s)
+        if p.is_absolute():
+            try:
+                rel = p.resolve().relative_to(Path(UPLOAD_DIR).resolve())
+                return f"/media/{rel.as_posix()}"
+            except Exception:
+                return f"/media/{p.name}"
+    except Exception:
+        pass
+    cleaned = s.replace("\\", "/").lstrip("./").lstrip("/")
+    return f"/media/{cleaned}"
+
+try:
+    templates.env.filters['public_media_url'] = public_media_url
+except Exception:
+    pass
+
 from .tasks import enqueue_conversion, convert_presentation, enqueue_ai_summary, enqueue_ai_quiz, enqueue_ai_flashcards, enqueue_ai_mindmap, enqueue_autograde_submission, ai_autograde_submission
 from .payments import verify_webhook_signature
 from jose import jwt
 from .auth import SECRET_KEY, ALGORITHM
 from fastapi.responses import PlainTextResponse
-from typing import Optional, List, Dict, Set
+from typing import Optional, List, Dict, Set, Any
 from pathlib import Path
 import json
 from sqlmodel import Session, select
@@ -84,14 +201,14 @@ from .tasks import enqueue_email
 
 @app.get('/my/teachers', response_class=HTMLResponse)
 def my_teachers(request: Request, current_user: User = Depends(get_current_user)):
-    """List teachers for the current student across their classrooms."""
+    """List teachers for the current user across their spaces."""
     with Session(engine) as session:
-        # find classrooms where current_user is a student
-        cls_ids = [m.classroom_id for m in session.exec(select(Membership).where(Membership.user_id == current_user.id)).all() if m.role == 'student']
+        # find spaces where current_user is a student
+        cls_ids = [m.space_id for m in session.exec(select(Membership).where(Membership.user_id == current_user.id)).all() if m.role == 'student']
         if not cls_ids:
             teachers = []
         else:
-            teachers_mem = session.exec(select(Membership).where((Membership.classroom_id.in_(cls_ids)) & (Membership.role.in_(['teacher','admin'])))).all()
+            teachers_mem = session.exec(select(Membership).where((Membership.space_id.in_(cls_ids)) & (Membership.role.in_(['teacher','admin'])))).all()
             teacher_ids = sorted({m.user_id for m in teachers_mem})
             teachers = []
             for tid in teacher_ids:
@@ -111,6 +228,52 @@ def teacher_presentations(request: Request, teacher_id: int, current_user: Optio
             raise HTTPException(status_code=404, detail='Teacher not found')
         pres = session.exec(select(Presentation).where(Presentation.owner_id == teacher_id).order_by(Presentation.created_at.desc())).all()
     return templates.TemplateResponse('teacher_presentations.html', {'request': request, 'teacher': teacher, 'presentations': pres})
+
+
+@app.get('/spaces', response_class=HTMLResponse)
+def student_spaces(request: Request, current_user: User = Depends(get_current_user)):
+    """List spaces the current user is a member of."""
+    with Session(engine) as session:
+        # find memberships for this user
+        mems = session.exec(select(Membership).where(Membership.user_id == current_user.id)).all()
+        cls_ids = [mid for m in mems for mid in [(getattr(m, 'space_id', None) or getattr(m, 'classroom_id', None))] if mid]
+        spaces = []
+        for cid in cls_ids:
+            s = session.get(Space, cid)
+            if not s:
+                continue
+            # collect teachers for display
+            teacher_mems = session.exec(select(Membership).where((Membership.space_id == cid) & (Membership.role.in_(['teacher','admin'])))).all()
+            teachers = []
+            for tm in teacher_mems:
+                u = session.get(User, tm.user_id)
+                if u:
+                    teachers.append(u)
+            # attach teachers list for template use
+            try:
+                s.teachers = teachers
+            except Exception:
+                pass
+            spaces.append(s)
+    return templates.TemplateResponse('student_spaces.html', {'request': request, 'spaces': spaces})
+
+
+@app.get('/spaces/{space_id}')
+def space_root(space_id: int):
+    # Temporary compatibility: the full Space views are still classroom-backed.
+    return RedirectResponse(f"/spaces/{space_id}/view", status_code=303)
+
+
+@app.get('/spaces/{space_id}/view')
+def space_view(space_id: int):
+    # Temporary compatibility: serve the existing classroom view.
+    return RedirectResponse(f"/classrooms/{space_id}/view", status_code=303)
+
+
+@app.get('/spaces/{space_id}/library')
+def space_library(space_id: int):
+    # Temporary compatibility: serve the existing classroom library view.
+    return RedirectResponse(f"/classrooms/{space_id}/library", status_code=303)
 
 
 def _make_invite_token(payload: dict) -> str:
@@ -146,20 +309,20 @@ def _verify_invite_token(token: str, max_age: int = 60 * 60 * 24 * 7):
 
 
 @app.post('/invite-student')
-def invite_student(request: Request, classroom_id: int = Form(...), email: str = Form(...), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
-    """Teacher/admin invites a student by email to join a classroom. Sends accept/decline links."""
+def invite_student(request: Request, space_id: int = Form(...), email: str = Form(...), csrf_token: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+    """Teacher/admin invites a user by email to join a space. Sends accept/decline links."""
     validate_csrf(request, csrf_token)
     with Session(engine) as session:
-        c = session.get(Classroom, classroom_id)
-        if not c:
-            raise HTTPException(status_code=404, detail='Classroom not found')
-        # check current_user is teacher/admin in classroom
-        mem = session.exec(select(Membership).where((Membership.classroom_id == classroom_id) & (Membership.user_id == current_user.id) & (Membership.role.in_(['teacher', 'admin'])))).first()
+        s = session.get(Space, space_id)
+        if not s:
+            raise HTTPException(status_code=404, detail='Space not found')
+        # check current_user is teacher/admin in space
+        mem = session.exec(select(Membership).where((Membership.space_id == space_id) & (Membership.user_id == current_user.id) & (Membership.role.in_(['teacher', 'admin'])))).first()
         if not mem:
             raise HTTPException(status_code=403, detail='Only teacher/admin can invite')
         # build token
         import time
-        payload = {'inviter_id': current_user.id, 'classroom_id': classroom_id, 'email': email, 'ts': int(time.time())}
+        payload = {'inviter_id': current_user.id, 'space_id': space_id, 'email': email, 'ts': int(time.time())}
         token = _make_invite_token(payload)
         # build accept/decline links
         try:
@@ -172,11 +335,11 @@ def invite_student(request: Request, classroom_id: int = Form(...), email: str =
 
         # send email via queue
         try:
-            ctx = {'inviter_name': getattr(current_user, 'username', ''), 'classroom_name': getattr(c, 'name', ''), 'accept_url': accept, 'decline_url': decline}
-            enqueue_email(email, 'Invitation to join classroom', None, 'emails/invite_student.html', ctx)
+            ctx = {'inviter_name': getattr(current_user, 'username', ''), 'space_name': getattr(s, 'name', ''), 'accept_url': accept, 'decline_url': decline}
+            enqueue_email(email, 'Invitation to join space', None, 'emails/invite_student.html', ctx)
         except Exception:
             pass
-    return RedirectResponse(f"/classrooms/{classroom_id}", status_code=303)
+    return RedirectResponse(f"/spaces/{space_id}/view", status_code=303)
 
 
 @app.get('/invitations/respond', response_class=HTMLResponse)
@@ -185,7 +348,7 @@ def invitations_respond(request: Request, token: str = Query(...), action: str =
     if not p:
         return HTMLResponse('<p>Invalid or expired invitation token.</p>', status_code=400)
     email = p.get('email')
-    classroom_id = p.get('classroom_id')
+    space_id = p.get('space_id')
     with Session(engine) as session:
         u = session.exec(select(User).where(User.email == email)).first()
         if action == 'accept':
@@ -193,12 +356,18 @@ def invitations_respond(request: Request, token: str = Query(...), action: str =
                 # redirect to register with invite token
                 return RedirectResponse(f"/register?invite_token={token}")
             # add membership if not exists
-            exists = session.exec(select(Membership).where((Membership.user_id == u.id) & (Membership.classroom_id == classroom_id))).first()
+            exists = session.exec(select(Membership).where((Membership.user_id == u.id) & (Membership.space_id == space_id))).first()
             if not exists:
-                m = Membership(user_id=u.id, classroom_id=classroom_id, role='student')
+                m = Membership(user_id=u.id, classroom_id=space_id, space_id=space_id, role='student')
                 session.add(m)
+                # system message in space chat
+                try:
+                    cm = SpaceMessage(space_id=space_id, sender_id=u.id, content=f"[system] {u.username} joined the space.")
+                    session.add(cm)
+                except Exception:
+                    pass
                 session.commit()
-            return HTMLResponse('<p>Thanks — you have been added to the classroom. You can <a href="/">return to the site</a>.</p>')
+            return HTMLResponse('<p>Thanks — you have been added to the space. You can <a href="/">return to the site</a>.</p>')
         else:
             return HTMLResponse('<p>You declined the invitation. No changes made.</p>')
 
@@ -228,12 +397,17 @@ def choose_role(request: Request, role: str = Form(...), invite_token: Optional[
         try:
             payload = _verify_invite_token(invite_token)
             if payload and payload.get('email') == current_user.email:
-                classroom_id = payload.get('classroom_id')
+                space_id = payload.get('space_id')
                 with Session(engine) as session:
-                    exists = session.exec(select(Membership).where((Membership.user_id == current_user.id) & (Membership.classroom_id == classroom_id))).first()
+                    exists = session.exec(select(Membership).where((Membership.user_id == current_user.id) & (Membership.space_id == space_id))).first()
                     if not exists:
-                        m = Membership(user_id=current_user.id, classroom_id=classroom_id, role='student')
+                        m = Membership(user_id=current_user.id, classroom_id=space_id, space_id=space_id, role='student')
                         session.add(m)
+                        try:
+                            cm = SpaceMessage(space_id=space_id, sender_id=current_user.id, content=f"[system] {current_user.username} joined the space.")
+                            session.add(cm)
+                        except Exception:
+                            pass
                         session.commit()
         except Exception:
             pass
@@ -342,6 +516,58 @@ def get_category_counts(force: bool = False):
     return _category_counts_cache or {}
 
 
+def get_available_category_names() -> List[str]:
+    """Return merged category names from DB + data/categories.json + builtin fallback."""
+    db_cats: List[str] = []
+    try:
+        with Session(engine) as session:
+            rows = session.exec(select(Category).order_by(Category.name)).all()
+            for c in rows:
+                name = getattr(c, 'name', None)
+                if name:
+                    db_cats.append(str(name).strip())
+    except Exception:
+        db_cats = []
+
+    builtin: List[str] = []
+    try:
+        data_path = Path(__file__).parent.parent / 'data' / 'categories.json'
+        if data_path.exists():
+            with open(data_path, 'r', encoding='utf-8') as fh:
+                candidates = json.load(fh)
+                if isinstance(candidates, list):
+                    builtin = [str(x).strip() for x in candidates if str(x).strip()]
+    except Exception:
+        builtin = []
+
+    if not builtin:
+        builtin = [
+            'Business', 'Technology', 'Design', 'Marketing', 'Education', 'Science', 'Art', 'Finance',
+            'Health', 'Politics', 'Society', 'Travel', 'Sports', 'Programming', 'Machine Learning',
+            'Data Science', 'Startups', 'Product', 'Leadership', 'Psychology', 'History', 'Culture',
+            'Photography', 'Film', 'Music', 'Environment', 'Law', 'Economics', 'Mathematics', 'Philosophy'
+        ]
+
+    seen = set()
+    merged: List[str] = []
+    for name in (db_cats + builtin):
+        key = (name or '').strip()
+        if not key:
+            continue
+        lowered = key.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        merged.append(key)
+
+    try:
+        merged.sort(key=lambda s: s.lower())
+    except Exception:
+        pass
+
+    return merged
+
+
 
 import asyncio
 # Simple in-memory WebSocket connection manager
@@ -402,6 +628,61 @@ class WebSocketManager:
 
 # global manager instance
 manager = WebSocketManager()
+
+
+class VideoSignalingState:
+    def __init__(self):
+        self.user_sockets: Dict[int, Set[WebSocket]] = {}
+        self.socket_users: Dict[WebSocket, int] = {}
+        self.room_users: Dict[int, Set[int]] = {}
+        self.user_rooms: Dict[int, Set[int]] = {}
+        self.meetings: Dict[int, Dict[str, Any]] = {}
+
+    def register_socket(self, user_id: int, websocket: WebSocket) -> None:
+        self.socket_users[websocket] = int(user_id)
+        self.user_sockets.setdefault(int(user_id), set()).add(websocket)
+
+    def unregister_socket(self, websocket: WebSocket) -> Optional[int]:
+        user_id = self.socket_users.pop(websocket, None)
+        if user_id is None:
+            return None
+        conns = self.user_sockets.get(int(user_id))
+        if conns:
+            conns.discard(websocket)
+            if not conns:
+                self.user_sockets.pop(int(user_id), None)
+        return int(user_id)
+
+    def join_room(self, user_id: int, space_id: int) -> None:
+        self.room_users.setdefault(int(space_id), set()).add(int(user_id))
+        self.user_rooms.setdefault(int(user_id), set()).add(int(space_id))
+
+    def leave_room(self, user_id: int, space_id: int) -> None:
+        room_set = self.room_users.get(int(space_id))
+        if room_set:
+            room_set.discard(int(user_id))
+            if not room_set:
+                self.room_users.pop(int(space_id), None)
+        user_set = self.user_rooms.get(int(user_id))
+        if user_set:
+            user_set.discard(int(space_id))
+            if not user_set:
+                self.user_rooms.pop(int(user_id), None)
+
+    def is_meeting_active(self, space_id: int) -> bool:
+        return bool(self.meetings.get(int(space_id)))
+
+    def start_meeting(self, space_id: int, host_id: int) -> None:
+        self.meetings[int(space_id)] = {
+            'host_id': int(host_id),
+            'participants': set([int(host_id)]),
+        }
+
+    def end_meeting(self, space_id: int) -> None:
+        self.meetings.pop(int(space_id), None)
+
+
+video_state = VideoSignalingState()
 # Allow CORS for dev; enables OPTIONS preflight responses and methods from the browser
 app.add_middleware(
     CORSMiddleware,
@@ -415,128 +696,470 @@ app.mount(
     StaticFiles(directory=str(Path(__file__).parent.parent / "static")),
     name="static",
 )
+# Serve uploaded files under /media
+app.mount(
+    "/media",
+    StaticFiles(directory=str(Path(UPLOAD_DIR).resolve())),
+    name="media",
+)
 # Serve uploaded files under /uploads
-@app.get('/uploads/chat/{owner_id}/{filename}')
-def serve_private_upload(owner_id: int, filename: str, current_user: User = Depends(get_current_user)):
-    """Serve chat uploads only to participants or the owner."""
-    from sqlmodel import select
-    from pathlib import Path as _P
+@app.post('/api/presentations/{presentation_id}/ai/slide')
+def ai_slide_action(presentation_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Handle slide-level AI actions. Expects JSON with:
+       - action: rephrase|simplify|key_points|elaborate|adapt_for_audience
+       - slide_id: opaque id (client provides)
+       - slide_text: the text to operate on (required)
+       - audience: optional (required only for adapt_for_audience)
 
-    # filepath on disk
-    disk_path = _P(UPLOAD_DIR) / 'chat' / str(owner_id) / filename
-    if not disk_path.exists():
-        raise HTTPException(status_code=404, detail='file not found')
-
-    # canonical web path stored in Message.file_url
-    web_path = f"/uploads/chat/{owner_id}/{quote(filename)}"
-
+    This endpoint MUST only operate on the provided slide_text and must not
+    fetch or infer content from other slides or the presentation.
+    """
+    # basic validation
     with Session(engine) as session:
-        # allow access if current_user is sender or recipient of any message that references this file
-        stmt = select(Message).where((Message.file_url == web_path) & ((Message.sender_id == current_user.id) | (Message.recipient_id == current_user.id)))
-        hit = session.exec(stmt).first()
-        if hit or current_user.id == owner_id:
-            return FileResponse(str(disk_path))
+        p = session.get(Presentation, presentation_id)
+        if not p:
+            raise HTTPException(status_code=404, detail='presentation not found')
+        presentation_title = (p.title or '').strip()
 
-    raise HTTPException(status_code=403, detail='forbidden')
-templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
-try:
-    templates.env.filters['url_encode'] = lambda s: quote(s or '')
-    templates.env.filters['humanize_comment_date'] = humanize_comment_date
-except Exception:
-    pass
+    action = (payload.get('action') or '').strip().lower()
+    slide_id = payload.get('slide_id')
+    slide_text = (payload.get('slide_text') or '').strip()
+    audience = (payload.get('audience') or '').strip()
+    user_input = (payload.get('user_input') or '').strip()
+    history = payload.get('history') or []
 
-# Template helper: return pending classroom invite notifications for a user
-def _get_classroom_invites_for_user(current_user):
-    if not current_user:
-        return []
+    allowed = {
+        'rephrase', 'simplify', 'key_points', 'elaborate', 'adapt_for_audience',
+        'explain_like_12', 'real_world_example', 'analogy', 'check_understanding', 'glossary',
+        'custom'
+    }
+    if action not in allowed:
+        raise HTTPException(status_code=400, detail='invalid action')
+    if action != 'custom' and not slide_text:
+        raise HTTPException(status_code=400, detail='slide_text is required')
+    if action == 'custom' and (not slide_text) and (not user_input):
+        raise HTTPException(status_code=400, detail='user_input or slide_text is required')
+    if action == 'adapt_for_audience' and not audience:
+        raise HTTPException(status_code=400, detail='audience is required for adapt_for_audience')
+
+    # in-memory cache (reduce duplicate calls)
     try:
-        from sqlmodel import Session, select
-        with Session(engine) as session:
-            rows = session.exec(
-                select(Notification).where(
-                    (Notification.recipient_id == current_user.id)
-                    & (Notification.verb == 'classroom_invite')
-                )
-            ).all()
-            out = []
-            for n in rows:
-                out.append({
-                    'id': getattr(n, 'id', None),
-                    'classroom_id': getattr(n, 'target_id', None),
-                    'actor_id': getattr(n, 'actor_id', None),
-                    'created_at': getattr(n, 'created_at', None),
-                    'message': getattr(n, 'message', None),
-                })
-            return out
+        cache_key_base = f"{presentation_id}|{action}|{audience}|{user_input}|{slide_text}"
+        cache_key = hashlib.sha256(cache_key_base.encode('utf-8')).hexdigest()
+        cached = _ai_cache_get(cache_key)
+        if cached:
+            return JSONResponse({'result': cached, 'cached': True})
     except Exception:
-        return []
+        cache_key = None
 
-try:
-    templates.env.globals['get_classroom_invites'] = _get_classroom_invites_for_user
-except Exception:
-    pass
-"""Expose some helper views for classroom relationships (teachers, classrooms, materials)."""
+    # per-user rate limiting
+    retry_after = _ai_rate_limit_check(current_user.id)
+    if retry_after:
+        raise HTTPException(status_code=429, detail='Rate limit exceeded. Please try again shortly.', headers={'Retry-After': str(retry_after)})
 
-# expose ADMIN_USERNAME to templates for conditional UI
-@app.get('/my/teachers', response_class=HTMLResponse)
-def my_teachers(request: Request, current_user: User = Depends(get_current_user)):
-    """List teachers for the current student across their classrooms."""
+    # global inflight cap to keep AI responsive under load
+    global _ai_inflight
+    with _ai_lock:
+        if _ai_inflight >= AI_GLOBAL_MAX_INFLIGHT:
+            raise HTTPException(status_code=429, detail='AI is busy. Please retry in a few seconds.', headers={'Retry-After': '2'})
+        _ai_inflight += 1
+
+    if action == 'custom' and (not slide_text):
+        clean = (user_input or '').strip()
+        if clean:
+            low = clean.lower()
+            if low in {'hi', 'hello', 'hey', 'yo', 'sup'}:
+                return JSONResponse({'result': 'Hello! How can I help you? Feel free to ask anything about this presentation.'})
+            words = [w for w in clean.split() if w]
+            if len(words) <= 3:
+                return JSONResponse({'result': "I'm not sure what you mean. Could you clarify or add a bit more detail?"})
+
+    # If slide_text is too short, try to extract text from the PDF for better AI quality.
+    image_b64 = None
+    pdf_path = None
+    if action != 'custom':
+        try:
+            if isinstance(slide_id, int) and (len(slide_text) < 40):
+                # Prefer converted PDF if available
+                try:
+                    with Session(engine) as session:
+                        job = session.exec(
+                            select(ConversionJob)
+                            .where(ConversionJob.presentation_id == presentation_id)
+                            .order_by(ConversionJob.created_at.desc())
+                        ).first()
+                        if job and job.result:
+                            cand = Path(UPLOAD_DIR) / job.result
+                            if cand.exists():
+                                pdf_path = cand
+                except Exception:
+                    pdf_path = None
+
+                # Fallback to original PDF
+                if not pdf_path:
+                    try:
+                        if getattr(p, 'filename', None):
+                            src = Path(UPLOAD_DIR) / p.filename
+                            if src.exists() and src.suffix.lower() == '.pdf':
+                                pdf_path = src
+                    except Exception:
+                        pdf_path = None
+
+                if pdf_path and fitz is not None:
+                    try:
+                        doc = fitz.open(str(pdf_path))
+                        if slide_id < doc.page_count:
+                            page = doc.load_page(slide_id)
+                            extracted = page.get_text("text").strip()
+                            if extracted and len(extracted) > len(slide_text):
+                                slide_text = extracted
+                            # also render an image for vision fallback
+                            try:
+                                mat = fitz.Matrix(2.0, 2.0)
+                                pix = page.get_pixmap(matrix=mat)
+                                import base64
+                                image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                            except Exception:
+                                image_b64 = None
+                        doc.close()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    provider = get_ai_provider()
+
+    # build a strict prompt that instructs the model to only use the provided slide text
+    title_hint = f"\nPresentation title: {presentation_title}" if presentation_title else ""
+    if action == 'rephrase':
+        user_instruction = (
+            "Rewrite the slide text with substantially different wording while preserving meaning. "
+            "Do NOT copy phrases; restructure sentences and vocabulary. "
+            "Keep it professional and clear. If the text is mostly contact details, summarize without listing URLs or phone numbers."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'simplify':
+        user_instruction = (
+            "Simplify the slide text for a general audience. Use plain language, short sentences, and remove jargon. "
+            "Return 2–5 short bullet points. Reword significantly; do NOT mirror the original phrasing. "
+            "If the text is mostly contact details, give a one-line summary without listing URLs or phone numbers."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'key_points':
+        user_instruction = (
+            "Extract the key points as concise bullet points (4–8 bullets). "
+            "Use your own words; do not copy sentences. Return bullets only."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'elaborate':
+        user_instruction = (
+            "Expand the slide text with brief explanations and one practical example. "
+            "Keep it tied to the input; do NOT add unrelated info."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'explain_like_12':
+        user_instruction = (
+            "Explain the slide text as if to a 12‑year‑old. Use simple words and short sentences. "
+            "Avoid copying the original phrasing."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'real_world_example':
+        user_instruction = (
+            "Provide 1–2 concrete real‑world examples that illustrate the slide text. "
+            "Keep it practical and brief."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'analogy':
+        user_instruction = (
+            "Explain the slide text using a clear analogy. "
+            "Keep it short and easy to grasp."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'check_understanding':
+        user_instruction = (
+            "Ask 3–5 short questions to check understanding of the slide text. "
+            "Return only the questions."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'glossary':
+        user_instruction = (
+            "List 4–8 key terms from the slide text with brief definitions. "
+            "Format as bullets: term — definition."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+    elif action == 'custom':
+        if slide_text:
+            user_instruction = (
+                "Follow the user's instruction using only the provided slide text and title context. "
+                "Do not add unrelated information; rephrase as needed."
+                f"{title_hint}\n\nUser instruction:\n" + (user_input or '') + "\n\nSlide text:\n" + slide_text
+            )
+        else:
+            user_instruction = (
+                "Have a natural, helpful conversation. Respond directly to the user's message. "
+                "Be concise but friendly."
+                f"{title_hint}\n\nUser message:\n" + (user_input or '')
+            )
+    else:  # adapt_for_audience
+        user_instruction = (
+            f"Rewrite the provided slide text to suit the following audience: {audience}. "
+            "Keep content consistent with the original slide and do NOT introduce unrelated information."
+            f"{title_hint}\n\nSlide text:\n" + slide_text
+        )
+
+    system_instruction = (
+        "You are a friendly, highly capable assistant like ChatGPT. "
+        "Never echo or paraphrase the user's message as your entire answer. "
+        "If the user message is unclear or too short, respond with a brief request for clarification (one short question). "
+        "Always produce a transformed, higher‑quality response (not a copy). "
+        "Use only the provided slide text and title context. Return only the answer with no labels, no meta commentary."
+    )
+    user_message = {"role": "user", "content": user_instruction}
+    if provider == "openai" and image_b64 and len(slide_text) < 120:
+        user_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_instruction},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+            ],
+        }
+
+    messages = [
+        {"role": "system", "content": system_instruction},
+    ]
+    if isinstance(history, list):
+        for item in history[-16:]:
+            try:
+                role = (item.get('role') or '').strip().lower()
+                content = (item.get('content') or '').strip()
+                if role in ('user', 'assistant') and content:
+                    messages.append({"role": role, "content": content[:1500]})
+            except Exception:
+                continue
+    messages.append(user_message)
+
+    result_text = ''
+    try:
+        max_attempts = 5
+        last_err = None
+        for attempt in range(max_attempts):
+            try:
+                model = os.getenv("OPENAI_MODEL", "gpt-4o") if provider == "openai" else os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+                result_text = chat_completion(messages, model=model, max_tokens=1400, temperature=0.7)
+                if result_text:
+                    break
+            except Exception as e:
+                last_err = str(e)
+                if attempt < max_attempts - 1:
+                    time.sleep(min(2 ** (attempt + 1), 10))
+                    continue
+        if not result_text:
+            raise HTTPException(status_code=502, detail=f'AI provider error: {last_err or "no response"}')
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'AI request failed: {e}')
+    finally:
+        with _ai_lock:
+            _ai_inflight = max(0, _ai_inflight - 1)
+
+    # Return only the transformed text
+    if cache_key and result_text:
+        try:
+            _ai_cache_set(cache_key, result_text)
+        except Exception:
+            pass
+    return JSONResponse({'result': result_text})
+
+
+@app.post('/api/presentations/{presentation_id}/ai/slide/replace')
+def ai_slide_replace(presentation_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Replace a single slide image with provided text rendered as an image.
+    Payload: { index: int, text: str }
+    """
+    index = payload.get('index')
+    text = (payload.get('text') or '').strip()
+    if index is None or not isinstance(index, int):
+        raise HTTPException(status_code=400, detail='index (int) is required')
+    if not text:
+        raise HTTPException(status_code=400, detail='text is required')
+
     with Session(engine) as session:
-        # find classrooms where current_user is a student
-        memberships = session.exec(select(Membership).where(Membership.user_id == current_user.id)).all()
-        classroom_ids = [m.classroom_id for m in memberships if m.role == 'student']
-        teachers = []
-        if classroom_ids:
-            teachers_mem = session.exec(
-                select(Membership).where(
-                    (Membership.classroom_id.in_(classroom_ids))
-                    & (Membership.role.in_(['teacher', 'admin']))
-                )
-            ).all()
-            teacher_ids = sorted({m.user_id for m in teachers_mem})
-            for tid in teacher_ids:
-                u = session.get(User, tid)
-                if u:
-                    teachers.append({'id': u.id, 'username': getattr(u, 'username', None), 'email': getattr(u, 'email', None)})
-    return templates.TemplateResponse('my_teachers.html', {'request': request, 'teachers': teachers})
+        p = session.get(Presentation, presentation_id)
+        if not p:
+            raise HTTPException(status_code=404, detail='presentation not found')
+        if p.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail='only the presentation owner can modify slides')
+
+    from pathlib import Path
+    thumbs_dir = Path(UPLOAD_DIR) / 'thumbs' / str(presentation_id)
+    if not thumbs_dir.exists():
+        raise HTTPException(status_code=404, detail='slides not available')
+
+    target = thumbs_dir / f'slide_{index}.png'
+    if not target.exists():
+        raise HTTPException(status_code=404, detail='slide not found')
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        raise HTTPException(status_code=500, detail='Pillow is required for slide image updates')
+
+    try:
+        with Image.open(str(target)) as src:
+            w, h = src.size
+    except Exception:
+        w, h = (1600, 900)
+
+    img = Image.new('RGB', (w, h), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype('arial.ttf', 28)
+    except Exception:
+        font = ImageFont.load_default()
+
+    margin = 40
+    max_width = w - margin * 2
+    lines = []
+    cur = ''
+
+    def _measure(text_val: str):
+        try:
+            bbox = draw.textbbox((0, 0), text_val, font=font)
+            return bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except Exception:
+            try:
+                return draw.textsize(text_val, font=font)
+            except Exception:
+                return (len(text_val) * 10, 18)
+
+    for word in text.split():
+        test = (cur + ' ' + word).strip()
+        if _measure(test)[0] <= max_width:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+
+    y = margin
+    line_height = _measure('Ay')[1] + 6
+    for line in lines:
+        if y + line_height > h - margin:
+            break
+        draw.text((margin, y), line, fill=(0, 0, 0), font=font)
+        y += line_height
+
+    try:
+        img.save(str(target), format='PNG')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'failed to save updated slide image: {e}')
+
+    return JSONResponse({'ok': True, 'index': index, 'url': f'/media/thumbs/{presentation_id}/slide_{index}.png'})
 
 
-@app.get('/my/classrooms', response_class=HTMLResponse)
-def student_classrooms(request: Request, current_user: User = Depends(get_current_user)):
-    """Show classrooms where the current user is a student."""
-    # If the user is a teacher, show classrooms they teach/own (allow create)
-    if getattr(current_user, 'site_role', None) in ('teacher', 'individual'):
-        with Session(engine) as session:
-            mems = session.exec(
-                select(Membership).where(
-                    (Membership.user_id == current_user.id)
-                    & (Membership.role.in_(['teacher', 'admin']))
-                )
-            ).all()
-            classroom_ids = sorted({m.classroom_id for m in mems}) if mems else []
-            rows = session.exec(select(Classroom).where(Classroom.id.in_(classroom_ids))).all() if classroom_ids else []
-            # attach teacher names for each classroom (mostly the current user)
-            classrooms = []
-            for c in rows:
-                teacher_mems = session.exec(
-                    select(Membership).where(
-                        (Membership.classroom_id == c.id)
-                        & (Membership.role.in_(['teacher', 'admin']))
-                    )
-                ).all()
-                teacher_ids = sorted({m.user_id for m in teacher_mems})
-                teachers = []
-                for tid in teacher_ids:
-                    u = session.get(User, tid)
-                    if u:
-                        teachers.append({'id': u.id, 'username': getattr(u, 'username', None)})
-                classrooms.append({
-                    'id': c.id,
-                    'name': getattr(c, 'name', ''),
-                    'school_id': getattr(c, 'school_id', None),
-                    'teachers': teachers,
-                })
-        return templates.TemplateResponse('student_classrooms.html', {'request': request, 'current_user': current_user, 'classrooms': classrooms})
+@app.post('/api/presentations/{presentation_id}/ai/slide/insert')
+def ai_slide_insert(presentation_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Insert a new slide after the given index. Payload: { after_index: int, text: str }"""
+    after_index = payload.get('after_index')
+    text = (payload.get('text') or '').strip()
+    if after_index is None or not isinstance(after_index, int):
+        raise HTTPException(status_code=400, detail='after_index (int) is required')
+    if not text:
+        raise HTTPException(status_code=400, detail='text is required')
+
+    with Session(engine) as session:
+        p = session.get(Presentation, presentation_id)
+        if not p:
+            raise HTTPException(status_code=404, detail='presentation not found')
+        if p.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail='only the presentation owner can modify slides')
+
+    from pathlib import Path
+    thumbs_dir = Path(UPLOAD_DIR) / 'thumbs' / str(presentation_id)
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    files = sorted(thumbs_dir.glob('slide_*.png'))
+    indices = sorted([int(f.stem.split('_')[1]) for f in files]) if files else []
+
+    try:
+        if indices:
+            for i in range(max(indices), after_index, -1):
+                src = thumbs_dir / f'slide_{i}.png'
+                dst = thumbs_dir / f'slide_{i+1}.png'
+                if src.exists():
+                    src.rename(dst)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'failed to shift slide files: {e}')
+
+    new_index = after_index + 1
+    target = thumbs_dir / f'slide_{new_index}.png'
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        raise HTTPException(status_code=500, detail='Pillow is required for slide image updates')
+
+    # try to sample size from adjacent slide
+    sample = thumbs_dir / f'slide_{new_index+1}.png'
+    if not sample.exists():
+        sample = thumbs_dir / f'slide_{new_index-1}.png'
+    try:
+        if sample.exists():
+            with Image.open(str(sample)) as src:
+                w, h = src.size
+        else:
+            w, h = (1600, 900)
+    except Exception:
+        w, h = (1600, 900)
+
+    img = Image.new('RGB', (w, h), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype('arial.ttf', 28)
+    except Exception:
+        font = ImageFont.load_default()
+
+    margin = 40
+    max_width = w - margin * 2
+    lines = []
+    cur = ''
+
+    def _measure(text_val: str):
+        try:
+            bbox = draw.textbbox((0, 0), text_val, font=font)
+            return bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except Exception:
+            try:
+                return draw.textsize(text_val, font=font)
+            except Exception:
+                return (len(text_val) * 10, 18)
+
+    for word in text.split():
+        test = (cur + ' ' + word).strip()
+        if _measure(test)[0] <= max_width:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+
+    y = margin
+    line_height = _measure('Ay')[1] + 6
+    for line in lines:
+        if y + line_height > h - margin:
+            break
+        draw.text((margin, y), line, fill=(0, 0, 0), font=font)
+        y += line_height
+
+    try:
+        img.save(str(target), format='PNG')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'failed to save inserted slide image: {e}')
+
+    return JSONResponse({'ok': True, 'inserted_index': new_index, 'url': f'/media/thumbs/{presentation_id}/slide_{new_index}.png'})
 
     # Student flow: include both confirmed student memberships and pending classroom invitations
     with Session(engine) as session:
@@ -587,240 +1210,87 @@ def student_classrooms(request: Request, current_user: User = Depends(get_curren
 
 @app.get('/my/materials', response_class=HTMLResponse)
 def student_materials(request: Request, current_user: User = Depends(get_current_user)):
-    # Teachers should see their teaching materials / dashboard instead of student materials
     if getattr(current_user, 'site_role', None) in ('teacher', 'individual'):
         return RedirectResponse('/teacher', status_code=303)
+
     with Session(engine) as session:
-        # include both confirmed student memberships and pending classroom invitations
-        memberships = session.exec(select(Membership).where(Membership.user_id == current_user.id)).all()
-        membership_ids = {m.classroom_id for m in memberships if m.role == 'student'}
+        memberships = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.role == 'student')
+            )
+        ).all()
         invited = session.exec(
             select(Notification).where(
                 (Notification.recipient_id == current_user.id)
                 & (Notification.verb == 'classroom_invite')
             )
         ).all()
-        invited_ids = {getattr(n, 'target_id', None) for n in invited if getattr(n, 'target_id', None) is not None}
-        classroom_ids = list(membership_ids.union(invited_ids))
-        teacher_ids = []
-        results = []
-        if not teacher_ids:
-            presentations = []
-            teachers_by_id = {}
-        else:
-            # load teachers
-            teachers = session.exec(select(User).where(User.id.in_(teacher_ids))).all()
-            teachers_by_id = {u.id: u for u in teachers}
-            # Only include presentations that are explicitly shared with these classrooms
-            # via LibraryItem.presentation_id to avoid showing a teacher's unrelated uploads.
-            lib_shared = session.exec(
-                select(LibraryItem).where(LibraryItem.classroom_id.in_(classroom_ids))
+
+        classroom_ids = {
+            getattr(m, 'classroom_id', None)
+            for m in memberships
+            if getattr(m, 'classroom_id', None) is not None
+        }
+        invited_classroom_ids = {
+            getattr(n, 'target_id', None)
+            for n in invited
+            if getattr(n, 'target_id', None) is not None
+        }
+        classroom_ids = sorted(classroom_ids.union(invited_classroom_ids))
+
+        presentations = []
+        library_items = []
+        assignments = []
+        assignment_status_by_id = {}
+        classrooms_by_id = {}
+        teachers_by_id = {}
+
+        if classroom_ids:
+            teacher_mems = session.exec(
+                select(Membership).where(
+                    (Membership.classroom_id.in_(classroom_ids))
+                    & (Membership.role.in_(['teacher', 'admin']))
+                )
             ).all()
-            shared_pids = [li.presentation_id for li in lib_shared if getattr(li, 'presentation_id', None)]
+            teacher_ids = sorted({m.user_id for m in teacher_mems if m.user_id != current_user.id})
+            if teacher_ids:
+                teachers = session.exec(select(User).where(User.id.in_(teacher_ids))).all()
+                teachers_by_id = {u.id: u for u in teachers}
+
+            library_items = session.exec(
+                select(LibraryItem)
+                .where(LibraryItem.classroom_id.in_(classroom_ids))
+                .order_by(desc(LibraryItem.created_at))
+            ).all()
+
+            shared_pids = sorted({li.presentation_id for li in library_items if getattr(li, 'presentation_id', None)})
             if shared_pids:
                 presentations = session.exec(
                     select(Presentation)
                     .where(Presentation.id.in_(shared_pids))
-                    .order_by(Presentation.created_at.desc())
+                    .order_by(desc(Presentation.created_at))
                 ).all()
-            else:
-                presentations = []
 
-        # If teacher_ids exist, build results list for presentation details and stats
-        if teacher_ids:
-            stmt = (
-                select(Presentation)
-                .options(
-                    selectinload(Presentation.owner),
-                    selectinload(Presentation.category),
-                )
-                .where(Presentation.owner_id.in_(teacher_ids))
-                .order_by(desc(Presentation.created_at))
-            )
-            pres_raw = session.exec(stmt).all()
-            for p in pres_raw:
-                owner = getattr(p, 'owner', None)
-                results.append(
-                    SimpleNamespace(
-                        id=p.id,
-                        title=p.title,
-                        description=getattr(p, 'description', None),
-                        filename=p.filename,
-                        mimetype=p.mimetype,
-                        owner_id=p.owner_id,
-                        owner_username=getattr(owner, 'username', None) if owner else None,
-                        owner_site_role=getattr(owner, 'site_role', None) if owner else None,
-                        owner_email=getattr(owner, 'email', None) if owner else None,
-                        views=getattr(p, 'views', None),
-                        cover_url=getattr(p, 'cover_url', None) if hasattr(p, 'cover_url') else None,
-                        created_at=getattr(p, 'created_at', None),
-                    )
-                )
+            classrooms = session.exec(select(Classroom).where(Classroom.id.in_(classroom_ids))).all()
+            classrooms_by_id = {c.id: c for c in classrooms}
 
-            # attach bookmark counts
-            res_ids = [r.id for r in results if getattr(r, 'id', None)]
-            if res_ids:
-                rows = session.exec(
-                    select(Bookmark.presentation_id, func.count(Bookmark.id))
-                    .where(Bookmark.presentation_id.in_(list(res_ids)))
-                    .group_by(Bookmark.presentation_id)
-                ).all()
-                bc = {int(r[0]): int(r[1]) for r in rows}
-            else:
-                bc = {}
-            for r in results:
-                setattr(r, 'bookmarks_count', bc.get(getattr(r, 'id', None), 0))
-
-            # attach like counts
-            if res_ids:
-                rows_likes = session.exec(
-                    select(Like.presentation_id, func.count(Like.id))
-                    .where(Like.presentation_id.in_(list(res_ids)))
-                    .group_by(Like.presentation_id)
-                ).all()
-                lc = {int(r[0]): int(r[1]) for r in rows_likes}
-            else:
-                lc = {}
-            for r in results:
-                setattr(r, 'likes_count', lc.get(getattr(r, 'id', None), 0))
-
-            # attach owner presentation counts
-            res_owner_ids = {
-                r.owner_id
-                for r in results
-                if getattr(r, 'owner_id', None) is not None
-            }
-            if res_owner_ids:
-                rows_oc = session.exec(
-                    select(Presentation.owner_id, func.count(Presentation.id))
-                    .where(Presentation.owner_id.in_(list(res_owner_ids)))
-                    .group_by(Presentation.owner_id)
-                ).all()
-                owner_counts = {int(r[0]): int(r[1]) for r in rows_oc}
-            else:
-                owner_counts = {}
-            for r in results:
-                setattr(
-                    r,
-                    'owner_presentation_count',
-                    owner_counts.get(getattr(r, 'owner_id', None), 0),
-                )
-        # also include any classroom-shared library items uploaded for these classrooms
-        library_items = session.exec(
-            select(LibraryItem)
-            .where(LibraryItem.classroom_id.in_(classroom_ids))
-            .order_by(LibraryItem.created_at.desc())
-        ).all()
-
-        # load classrooms and assignments for those classrooms
-        classrooms = session.exec(select(Classroom).where(Classroom.id.in_(classroom_ids))).all()
-        classrooms_by_id = {c.id: c for c in classrooms}
-        assignments = session.exec(
-            select(Assignment)
-            .where(Assignment.classroom_id.in_(classroom_ids))
-            .order_by(Assignment.due_date.is_(None), Assignment.due_date, Assignment.created_at.desc())
-        ).all()
-        if assignments:
-            aid_list = [a.id for a in assignments]
-            statuses = session.exec(
-                select(AssignmentStatus).where(
-                    (AssignmentStatus.assignment_id.in_(aid_list))
-                    & (AssignmentStatus.student_id == current_user.id)
-                )
+            assignments = session.exec(
+                select(Assignment)
+                .where(Assignment.classroom_id.in_(classroom_ids))
+                .order_by(Assignment.due_date.is_(None), Assignment.due_date, desc(Assignment.created_at))
             ).all()
-            assignment_status_by_id = {s.assignment_id: s for s in statuses}
-        else:
-            assignment_status_by_id = {}
-        cls_ids = [m.classroom_id for m in memberships]
-        if cls_ids:
-            # teachers/admins for those classrooms
-            teachers_mem = session.exec(
-                select(Membership).where(
-                    (Membership.classroom_id.in_(cls_ids))
-                        & (Membership.role.in_(['teacher', 'admin']))
+
+            if assignments:
+                assignment_ids = [a.id for a in assignments if getattr(a, 'id', None) is not None]
+                statuses = session.exec(
+                    select(AssignmentStatus).where(
+                        (AssignmentStatus.assignment_id.in_(assignment_ids))
+                        & (AssignmentStatus.student_id == current_user.id)
                     )
                 ).all()
-            teacher_ids = sorted({m.user_id for m in teachers_mem})
-        if teacher_ids:
-            stmt = (
-                select(Presentation)
-                .options(
-                    selectinload(Presentation.owner),
-                    selectinload(Presentation.category),
-                )
-                .where(Presentation.owner_id.in_(teacher_ids))
-                .order_by(desc(Presentation.created_at))
-            )
-            pres_raw = session.exec(stmt).all()
-            for p in pres_raw:
-                owner = getattr(p, 'owner', None)
-                results.append(
-                    SimpleNamespace(
-                            id=p.id,
-                            title=p.title,
-                            description=getattr(p, 'description', None),
-                            filename=p.filename,
-                            mimetype=p.mimetype,
-                            owner_id=p.owner_id,
-                            owner_username=getattr(owner, 'username', None) if owner else None,
-                            owner_site_role=getattr(owner, 'site_role', None) if owner else None,
-                            owner_email=getattr(owner, 'email', None) if owner else None,
-                            views=getattr(p, 'views', None),
-                            cover_url=getattr(p, 'cover_url', None)
-                            if hasattr(p, 'cover_url')
-                            else None,
-                            created_at=getattr(p, 'created_at', None),
-                        )
-                    )
+                assignment_status_by_id = {s.assignment_id: s for s in statuses}
 
-                # attach bookmark counts
-                res_ids = [r.id for r in results if getattr(r, 'id', None)]
-                if res_ids:
-                    rows = session.exec(
-                        select(Bookmark.presentation_id, func.count(Bookmark.id))
-                        .where(Bookmark.presentation_id.in_(list(res_ids)))
-                        .group_by(Bookmark.presentation_id)
-                    ).all()
-                    bc = {int(r[0]): int(r[1]) for r in rows}
-                else:
-                    bc = {}
-                for r in results:
-                    setattr(r, 'bookmarks_count', bc.get(getattr(r, 'id', None), 0))
-
-                # attach like counts
-                if res_ids:
-                    rows_likes = session.exec(
-                        select(Like.presentation_id, func.count(Like.id))
-                        .where(Like.presentation_id.in_(list(res_ids)))
-                        .group_by(Like.presentation_id)
-                    ).all()
-                    lc = {int(r[0]): int(r[1]) for r in rows_likes}
-                else:
-                    lc = {}
-                for r in results:
-                    setattr(r, 'likes_count', lc.get(getattr(r, 'id', None), 0))
-
-                # attach owner presentation counts
-                res_owner_ids = {
-                    r.owner_id
-                    for r in results
-                    if getattr(r, 'owner_id', None) is not None
-                }
-                if res_owner_ids:
-                    rows_oc = session.exec(
-                        select(Presentation.owner_id, func.count(Presentation.id))
-                        .where(Presentation.owner_id.in_(list(res_owner_ids)))
-                        .group_by(Presentation.owner_id)
-                    ).all()
-                    owner_counts = {int(r[0]): int(r[1]) for r in rows_oc}
-                else:
-                    owner_counts = {}
-                for r in results:
-                    setattr(
-                        r,
-                        'owner_presentation_count',
-                        owner_counts.get(getattr(r, 'owner_id', None), 0),
-                    )
     return templates.TemplateResponse(
         'student_materials.html',
         {
@@ -945,13 +1415,51 @@ def teacher_create_classroom_post(
         session.add(c)
         session.commit()
         session.refresh(c)
+        # Keep the new Space table in sync during the transition.
+        try:
+            if not session.get(Space, c.id):
+                session.add(
+                    Space(
+                        id=c.id,
+                        school_id=getattr(c, 'school_id', None),
+                        name=getattr(c, 'name', None),
+                        code=getattr(c, 'code', None),
+                        created_at=getattr(c, 'created_at', None) or datetime.utcnow(),
+                    )
+                )
+                session.commit()
+        except Exception:
+            session.rollback()
         membership = Membership(
             user_id=current_user.id,
             classroom_id=c.id,
+            space_id=c.id,
             role='teacher',
         )
         session.add(membership)
         session.commit()
+
+
+@app.get('/teacher/spaces/new', response_class=HTMLResponse)
+def teacher_create_space_get(request: Request, current_user: User = Depends(get_current_user)):
+    return teacher_create_classroom_get(request=request, current_user=current_user)
+
+
+@app.post('/teacher/spaces/new')
+def teacher_create_space_post(
+    request: Request,
+    name: str = Form(...),
+    code: Optional[str] = Form(None),
+    csrf_token: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+):
+    return teacher_create_classroom_post(
+        request=request,
+        name=name,
+        code=code,
+        csrf_token=csrf_token,
+        current_user=current_user,
+    )
 @app.post('/classrooms/new')
 def create_classroom(request: Request, name: str = Form(...), current_user: User = Depends(get_current_user)):
     """Allow teachers to create a new classroom that can host multiple users.
@@ -979,6 +1487,22 @@ def create_classroom(request: Request, name: str = Form(...), current_user: User
         session.commit()
         session.refresh(cls)
 
+        # Keep Space table in sync during transition.
+        try:
+            if not session.get(Space, cls.id):
+                session.add(
+                    Space(
+                        id=cls.id,
+                        school_id=getattr(cls, 'school_id', None),
+                        name=getattr(cls, 'name', None),
+                        code=getattr(cls, 'code', None),
+                        created_at=getattr(cls, 'created_at', None) or datetime.utcnow(),
+                    )
+                )
+                session.commit()
+        except Exception:
+            session.rollback()
+
         # Ensure creator is recorded as a teacher in this classroom
         existing = session.exec(
             select(Membership).where(
@@ -987,7 +1511,7 @@ def create_classroom(request: Request, name: str = Form(...), current_user: User
             )
         ).first()
         if not existing:
-            m = Membership(user_id=current_user.id, classroom_id=cls.id, role='teacher')
+            m = Membership(user_id=current_user.id, classroom_id=cls.id, space_id=cls.id, role='teacher')
             session.add(m)
             session.commit()
 
@@ -1203,6 +1727,366 @@ def invite_by_username(classroom_id: int, username: str = Form(...), current_use
             session.rollback()
 
     return RedirectResponse(f"/classrooms/{classroom_id}/performance?success=Invitation+sent+to+{quote(uname)}", status_code=303)
+
+
+@app.post('/api/classrooms/{classroom_id}/invite')
+def api_invite_by_username(classroom_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Invite an existing user to a classroom by username (JSON API)."""
+    uname = (payload.get("username") or "").strip()
+    if not uname:
+        raise HTTPException(status_code=400, detail="username is required")
+
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can invite')
+
+        target = session.exec(select(User).where(User.username == uname)).first()
+        if not target:
+            raise HTTPException(status_code=404, detail='User not found')
+        if target.id == current_user.id:
+            raise HTTPException(status_code=400, detail='Cannot invite yourself')
+
+        existing = session.exec(
+            select(Membership).where(
+                (Membership.user_id == target.id)
+                & (Membership.classroom_id == classroom_id)
+            )
+        ).first()
+        if existing:
+            return JSONResponse({"ok": True, "message": "User is already a member"})
+
+        try:
+            n = Notification(
+                recipient_id=target.id,
+                actor_id=current_user.id,
+                verb='classroom_invite',
+                target_type='classroom',
+                target_id=classroom_id,
+            )
+            session.add(n)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise HTTPException(status_code=500, detail='Failed to send invite')
+
+    return JSONResponse({"ok": True, "message": f"Invitation sent to {uname}"})
+
+
+@app.post('/api/classrooms/join')
+def join_classroom_by_code(payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Join a classroom using a join code."""
+    code = (payload.get("code") or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="code is required")
+    with Session(engine) as session:
+        c = session.exec(select(Classroom).where(Classroom.code == code)).first()
+        if not c:
+            raise HTTPException(status_code=404, detail="Classroom not found")
+        exists = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.classroom_id == c.id)
+            )
+        ).first()
+        if exists:
+            return JSONResponse({"ok": True, "classroom_id": c.id, "message": "Already a member"})
+        m = Membership(user_id=current_user.id, classroom_id=c.id, role='student')
+        session.add(m)
+        try:
+            cm = ClassroomMessage(classroom_id=c.id, sender_id=current_user.id, content=f"[system] {current_user.username} joined the classroom.")
+            session.add(cm)
+        except Exception:
+            pass
+        session.commit()
+    return JSONResponse({"ok": True, "classroom_id": c.id, "message": "Joined classroom"})
+
+
+@app.post('/api/spaces/join')
+def join_space_by_code(payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Join a space using a join code."""
+    code = (payload.get("code") or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="code is required")
+    with Session(engine) as session:
+        s = session.exec(select(Space).where(Space.code == code)).first()
+        if not s:
+            # If the classroom->space sync hasn't happened yet, fall back to classroom.
+            c = session.exec(select(Classroom).where(Classroom.code == code)).first()
+            if not c:
+                raise HTTPException(status_code=404, detail="Space not found")
+            s = session.get(Space, c.id)
+            if not s:
+                s = Space(
+                    id=c.id,
+                    school_id=getattr(c, 'school_id', None),
+                    name=getattr(c, 'name', None),
+                    code=getattr(c, 'code', None),
+                    created_at=getattr(c, 'created_at', None) or datetime.utcnow(),
+                )
+                session.add(s)
+                session.commit()
+                session.refresh(s)
+        exists = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.space_id == s.id)
+            )
+        ).first()
+        if exists:
+            return JSONResponse({"ok": True, "space_id": s.id, "message": "Already a member"})
+
+        # membership.space_id exists via migration bridge; set classroom_id only if it exists
+        m = Membership(user_id=current_user.id, classroom_id=s.id, space_id=s.id, role='student')
+        session.add(m)
+        try:
+            sm = SpaceMessage(space_id=s.id, sender_id=current_user.id, content=f"[system] {current_user.username} joined the space.")
+            session.add(sm)
+        except Exception:
+            pass
+        session.commit()
+    return JSONResponse({"ok": True, "space_id": s.id, "message": "Joined space"})
+
+
+def _generate_classroom_code() -> str:
+    # 6-char alphanumeric code
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+@app.get('/api/classrooms/{classroom_id}/code')
+def get_classroom_code(classroom_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can view code')
+        if not c.code:
+            c.code = _generate_classroom_code()
+            session.add(c)
+            session.commit()
+            session.refresh(c)
+        return JSONResponse({"ok": True, "code": c.code})
+
+
+@app.post('/api/classrooms/{classroom_id}/code/regenerate')
+def regenerate_classroom_code(classroom_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.user_id == current_user.id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can regenerate code')
+        c.code = _generate_classroom_code()
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        return JSONResponse({"ok": True, "code": c.code})
+
+
+@app.get('/api/spaces/{space_id}/code')
+def get_space_code(space_id: int, current_user: User = Depends(get_current_user)):
+    """Get (and lazily create) the join code for a space.
+
+    Compatibility notes:
+    - During migration, space ids mirror classroom ids.
+    - We keep `classroom.code` in sync when possible so legacy clients still work.
+    """
+    with Session(engine) as session:
+        s = session.get(Space, space_id)
+        if not s:
+            # fallback: create Space from legacy Classroom if present
+            c = session.get(Classroom, space_id)
+            if not c:
+                raise HTTPException(status_code=404, detail='Space not found')
+            s = Space(
+                id=c.id,
+                school_id=getattr(c, 'school_id', None),
+                name=getattr(c, 'name', None),
+                code=getattr(c, 'code', None),
+                created_at=getattr(c, 'created_at', None) or datetime.utcnow(),
+            )
+            session.add(s)
+            session.commit()
+            session.refresh(s)
+
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can view code')
+
+        if not getattr(s, 'code', None):
+            s.code = _generate_classroom_code()
+            session.add(s)
+            # keep legacy classroom code in sync when possible
+            try:
+                c = session.get(Classroom, space_id)
+                if c and not getattr(c, 'code', None):
+                    c.code = s.code
+                    session.add(c)
+            except Exception:
+                pass
+            session.commit()
+            session.refresh(s)
+
+        return JSONResponse({"ok": True, "code": s.code})
+
+
+@app.post('/api/spaces/{space_id}/code/regenerate')
+def regenerate_space_code(space_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        s = session.get(Space, space_id)
+        if not s:
+            c = session.get(Classroom, space_id)
+            if not c:
+                raise HTTPException(status_code=404, detail='Space not found')
+            s = Space(
+                id=c.id,
+                school_id=getattr(c, 'school_id', None),
+                name=getattr(c, 'name', None),
+                code=getattr(c, 'code', None),
+                created_at=getattr(c, 'created_at', None) or datetime.utcnow(),
+            )
+            session.add(s)
+            session.commit()
+            session.refresh(s)
+
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can regenerate code')
+
+        s.code = _generate_classroom_code()
+        session.add(s)
+        # keep legacy classroom code in sync when possible
+        try:
+            c = session.get(Classroom, space_id)
+            if c:
+                c.code = s.code
+                session.add(c)
+        except Exception:
+            pass
+        session.commit()
+        session.refresh(s)
+        return JSONResponse({"ok": True, "code": s.code})
+
+
+@app.post('/api/spaces/{space_id}/invite')
+def api_space_invite_student(space_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    """Invite an existing user to a space by username (JSON API).
+
+    For compatibility with existing invitation acceptance flows, we keep
+    using `verb='classroom_invite'` and `target_type='classroom'` while
+    ids are shared.
+    """
+    uname = (payload.get('username') or '').strip()
+    if not uname:
+        raise HTTPException(status_code=400, detail='username required')
+
+    with Session(engine) as session:
+        s = session.get(Space, space_id)
+        if not s:
+            c = session.get(Classroom, space_id)
+            if not c:
+                raise HTTPException(status_code=404, detail='Space not found')
+            s = Space(
+                id=c.id,
+                school_id=getattr(c, 'school_id', None),
+                name=getattr(c, 'name', None),
+                code=getattr(c, 'code', None),
+                created_at=getattr(c, 'created_at', None) or datetime.utcnow(),
+            )
+            session.add(s)
+            session.commit()
+            session.refresh(s)
+
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail='Only teacher/admin can invite')
+
+        target = session.exec(select(User).where(User.username == uname)).first()
+        if not target:
+            raise HTTPException(status_code=404, detail='User not found')
+        if target.id == current_user.id:
+            raise HTTPException(status_code=400, detail='Cannot invite yourself')
+
+        existing = session.exec(
+            select(Membership).where(
+                (Membership.user_id == target.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+            )
+        ).first()
+        if existing:
+            return JSONResponse({'ok': True, 'already_member': True})
+
+        try:
+            n = Notification(
+                recipient_id=target.id,
+                actor_id=current_user.id,
+                verb='classroom_invite',
+                target_type='classroom',
+                target_id=space_id,
+            )
+            session.add(n)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise HTTPException(status_code=500, detail='Failed to create invite')
+
+    return JSONResponse({'ok': True, 'invited_username': uname})
 
 
 @app.post('/api/classrooms/{classroom_id}/invite')
@@ -1519,45 +2403,6 @@ def classroom_performance_csv(classroom_id: int, current_user: User = Depends(ge
     return Response(content=csv_text, media_type='text/csv')
 
 
-@app.get('/classrooms/{classroom_id}/library', response_class=HTMLResponse)
-def classroom_library_page(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
-    """HTML view of a classroom's library and assignments.
-
-    This backs the "Class library" button on the Teaching Hub.
-    """
-    with Session(engine) as session:
-        c = session.get(Classroom, classroom_id)
-        if not c:
-            raise HTTPException(status_code=404, detail='Classroom not found')
-        member = session.exec(
-            select(Membership).where(
-                (Membership.user_id == current_user.id)
-                & (Membership.classroom_id == classroom_id)
-            )
-        ).first()
-        if not member:
-            raise HTTPException(status_code=403, detail='Not a classroom member')
-        items = session.exec(
-            select(LibraryItem)
-            .where(LibraryItem.classroom_id == classroom_id)
-            .order_by(LibraryItem.created_at.desc())
-        ).all()
-        assignments = session.exec(
-            select(Assignment)
-            .where(Assignment.classroom_id == classroom_id)
-            .order_by(Assignment.created_at.desc())
-        ).all()
-    return templates.TemplateResponse(
-        'classroom.html',
-        {
-            'request': request,
-            'classroom': c,
-            'member': member,
-            'items': items,
-            'assignments': assignments,
-        },
-    )
-
 @app.get('/classrooms/{classroom_id}')
 def get_classroom(request: Request, classroom_id: int, current_user: User = Depends(get_current_user_optional)):
     with Session(engine) as session:
@@ -1681,14 +2526,51 @@ def classroom_library_page(request: Request, classroom_id: int, current_user: Us
         ).first()
         if not mem:
             raise HTTPException(status_code=403, detail='Not a classroom member')
+        teacher_ids = [m.user_id for m in session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).all()]
         items = session.exec(
             select(LibraryItem)
-            .where(LibraryItem.classroom_id == classroom_id)
+            .where(
+                (LibraryItem.classroom_id == classroom_id)
+                & (LibraryItem.uploaded_by.in_(teacher_ids))
+            )
             .order_by(LibraryItem.created_at.desc())
         ).all()
     return templates.TemplateResponse(
         'classroom_library.html',
         {'request': request, 'classroom': c, 'member': mem, 'items': items},
+    )
+
+
+@app.get('/classrooms/{classroom_id}/attendance', response_class=HTMLResponse)
+def classroom_attendance_page(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
+    """Attendance page for teachers/admins."""
+    with Session(engine) as session:
+        c = session.get(Classroom, classroom_id)
+        if not c:
+            raise HTTPException(status_code=404, detail='Classroom not found')
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (Membership.classroom_id == classroom_id)
+            )
+        ).first()
+        if not mem or mem.role not in ('teacher', 'admin'):
+            raise HTTPException(status_code=403, detail='Only teacher/admin can mark attendance')
+        rows = session.exec(
+            select(Membership).where(Membership.classroom_id == classroom_id)
+        ).all()
+        members = []
+        for m in rows:
+            u = session.get(User, m.user_id)
+            members.append({'user_id': m.user_id, 'username': getattr(u, 'username', None), 'role': m.role})
+    return templates.TemplateResponse(
+        'classroom_attendance.html',
+        {'request': request, 'classroom': c, 'members': members},
     )
 
 
@@ -1854,6 +2736,24 @@ def leave_classroom(classroom_id: int, current_user: User = Depends(get_current_
         return JSONResponse({'ok': True})
 
 
+@app.post('/spaces/{space_id}/leave')
+def leave_space(space_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        stmt = select(Membership).where(
+            (Membership.user_id == current_user.id)
+            & (
+                (Membership.space_id == space_id)
+                | (Membership.classroom_id == space_id)
+            )
+        )
+        m = session.exec(stmt).first()
+        if not m:
+            raise HTTPException(status_code=404, detail='Membership not found')
+        session.delete(m)
+        session.commit()
+        return JSONResponse({'ok': True})
+
+
 @app.get('/classrooms/{classroom_id}/members', response_class=HTMLResponse)
 def list_classroom_members(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
     """View of classroom members for all users."""
@@ -1893,6 +2793,7 @@ def list_classroom_members(request: Request, classroom_id: int, current_user: Us
 @app.get('/classrooms/{classroom_id}/boot', response_class=HTMLResponse)
 def classroom_boot_page(request: Request, classroom_id: int, current_user: User = Depends(get_current_user)):
     """Teacher/admin page to remove students from the classroom by username."""
+    error = request.query_params.get('error')
     with Session(engine) as session:
         c = session.get(Classroom, classroom_id)
         if not c:
@@ -1917,7 +2818,7 @@ def classroom_boot_page(request: Request, classroom_id: int, current_user: User 
             students.append({'user_id': m.user_id, 'username': getattr(u, 'username', None)})
     return templates.TemplateResponse(
         'classroom_boot.html',
-        {'request': request, 'classroom': c, 'students': students},
+        {'request': request, 'classroom': c, 'students': students, 'error': error},
     )
 
 
@@ -1935,7 +2836,7 @@ async def classroom_boot_action(
     # allow comma/space separated usernames
     parts = [p.strip() for p in raw.replace('\n', ',').split(',') if p.strip()]
     if not parts:
-        return RedirectResponse(f"/classrooms/{classroom_id}/boot", status_code=303)
+        return RedirectResponse(f"/classrooms/{classroom_id}/boot?error=empty", status_code=303)
 
     removed = []
     with Session(engine) as session:
@@ -1966,6 +2867,11 @@ async def classroom_boot_action(
                 continue
             session.delete(m)
             removed.append(uname)
+            try:
+                cm = ClassroomMessage(classroom_id=classroom_id, sender_id=current_user.id, content=f"[system] {uname} was removed from the classroom.")
+                session.add(cm)
+            except Exception:
+                pass
         if removed:
             session.commit()
     return RedirectResponse(f"/classrooms/{classroom_id}/boot", status_code=303)
@@ -2495,7 +3401,20 @@ def list_library_files(classroom_id: int, current_user: User = Depends(get_curre
         m = session.exec(stmt).first()
         if not m:
             raise HTTPException(status_code=403, detail='Not a classroom member')
-        items = session.exec(select(LibraryItem).where(LibraryItem.classroom_id == classroom_id).order_by(LibraryItem.created_at.desc())).all()
+        teacher_ids = [mem.user_id for mem in session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).all()]
+        items = session.exec(
+            select(LibraryItem)
+            .where(
+                (LibraryItem.classroom_id == classroom_id)
+                & (LibraryItem.uploaded_by.in_(teacher_ids))
+            )
+            .order_by(LibraryItem.created_at.desc())
+        ).all()
         return JSONResponse({'ok': True, 'items': [{'id': i.id, 'title': i.title, 'filename': i.filename, 'mimetype': i.mimetype, 'uploaded_by': i.uploaded_by, 'created_at': i.created_at.isoformat()} for i in items]})
 
 
@@ -2770,17 +3689,9 @@ async def add_current_user_to_request(request: Request, call_next):
         )
     else:
         request.state.current_user = None
-    # load categories for the header/hamburger menu (simple list of names)
+    # load categories for the header/hamburger menu (merged from DB + fallback list)
     try:
-        with Session(engine) as session:
-            cats = session.exec(select(Category).order_by(Category.name)).all()
-            names = [c.name for c in cats if getattr(c, 'name', None)]
-            # enforce case-insensitive sort so UI lists are consistent
-            try:
-                names = sorted(names, key=lambda s: (s or '').lower())
-            except Exception:
-                pass
-            request.state.categories = names
+        request.state.categories = get_available_category_names()
     except Exception:
         request.state.categories = []
     # expose cookie consent preferences to templates
@@ -3554,6 +4465,32 @@ def list_classroom_members(classroom_id: int, current_user: User = Depends(get_c
         return JSONResponse({"members": out})
 
 
+@app.get("/api/spaces/{space_id}/members")
+def list_space_members(space_id: int, current_user: User = Depends(get_current_user)):
+    MembershipModel = __import__("app.models").models.Membership
+    UserModel = __import__("app.models").models.User
+    SpaceModel = __import__("app.models").models.Space
+    ClassroomModel = __import__("app.models").models.Classroom
+    with Session(engine) as session:
+        s = session.get(SpaceModel, space_id)
+        if not s:
+            # fallback: allow spaces to resolve from legacy classroom ids during transition
+            c = session.get(ClassroomModel, space_id)
+            if not c:
+                raise HTTPException(status_code=404, detail="space not found")
+        rows = session.exec(
+            select(MembershipModel).where(
+                (MembershipModel.space_id == space_id)
+                | (MembershipModel.classroom_id == space_id)
+            )
+        ).all()
+        out = []
+        for m in rows:
+            u = session.get(UserModel, m.user_id)
+            out.append({"user_id": m.user_id, "role": m.role, "username": getattr(u, "username", None)})
+        return JSONResponse({"members": out})
+
+
 @app.get("/api/classrooms/{classroom_id}/library")
 def list_classroom_library(classroom_id: int, current_user: User = Depends(get_current_user)):
     LibraryItem = __import__("app.models").models.LibraryItem
@@ -3563,7 +4500,20 @@ def list_classroom_library(classroom_id: int, current_user: User = Depends(get_c
         c = session.get(Classroom, classroom_id)
         if not c:
             raise HTTPException(status_code=404, detail="classroom not found")
-        items = session.exec(select(LibraryItem).where(LibraryItem.classroom_id == classroom_id).order_by(LibraryItem.created_at.desc())).all()
+        teacher_ids = [mem.user_id for mem in session.exec(
+            select(Membership).where(
+                (Membership.classroom_id == classroom_id)
+                & (Membership.role.in_(['teacher', 'admin']))
+            )
+        ).all()]
+        items = session.exec(
+            select(LibraryItem)
+            .where(
+                (LibraryItem.classroom_id == classroom_id)
+                & (LibraryItem.uploaded_by.in_(teacher_ids))
+            )
+            .order_by(LibraryItem.created_at.desc())
+        ).all()
         out = []
         for it in items:
             pres = session.get(PresentationModel, it.presentation_id) if it.presentation_id else None
@@ -3627,31 +4577,29 @@ def list_submissions_for_assignment(assignment_id: int, current_user: User = Dep
             if not mem or mem.role not in ('teacher', 'admin'):
                 raise HTTPException(status_code=403, detail='only teachers can autograde')
             # attempt AI-based grading if key present
-            OPENAI_KEY = os.getenv('OPENAI_API_KEY')
             grade = None
             feedback = None
             from pathlib import Path
             UPLOAD_DIR = os.getenv('UPLOAD_DIR', './uploads')
             file_path = Path(UPLOAD_DIR) / s.filename if s.filename else None
             try:
-                if OPENAI_KEY and file_path and file_path.exists():
+                if file_path and file_path.exists():
                     content = ''
                     if s.mimetype and s.mimetype.startswith('text'):
                         content = file_path.read_text(encoding='utf-8', errors='ignore')[:4000]
                     else:
                         content = f"Student submission file: {file_path.name}, type={s.mimetype}"
-                    headers = {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"}
-                    data = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": f"Grade this student submission on a scale 0-100 and provide brief feedback. Submission content:\n{content}"}], "max_tokens": 200}
-                    with httpx.Client(timeout=30) as client:
-                        r = client.post('https://api.openai.com/v1/chat/completions', headers=headers, json=data)
-                        if r.status_code == 200:
-                            j = r.json()
-                            out = j.get('choices', [{}])[0].get('message', {}).get('content', '')
-                            import re
-                            m = re.search(r'([0-9]{1,3})', out)
-                            if m:
-                                grade = float(m.group(1))
-                            feedback = out
+                    out = chat_completion(
+                        [{"role": "user", "content": f"Grade this student submission on a scale 0-100 and provide brief feedback. Submission content:\n{content}"}],
+                        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                        max_tokens=200,
+                        temperature=0.3,
+                    )
+                    import re
+                    m = re.search(r'([0-9]{1,3})', out)
+                    if m:
+                        grade = float(m.group(1))
+                    feedback = out
                 if grade is None:
                     if file_path and file_path.exists():
                         size = file_path.stat().st_size
@@ -3911,8 +4859,10 @@ def index(request: Request, q: str = ""):
                     mimetype=p.mimetype,
                     owner_id=oid,
                     owner_username=getattr(owner, "username", None) if owner else None,
+                    owner_site_role=getattr(owner, "site_role", None) if owner else None,
                     owner_email=getattr(owner, "email", None) if owner else None,
                     views=getattr(p, "views", None),
+                    downloads=getattr(p, "downloads", 0),
                     cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
                     created_at=getattr(p, "created_at", None),
                     followers_count=follower_counts.get(oid, 0) if oid else 0,
@@ -3957,6 +4907,7 @@ def index(request: Request, q: str = ""):
                         owner_site_role=getattr(owner, "site_role", None) if owner else None,
                         owner_email=getattr(owner, "email", None) if owner else None,
                         views=getattr(p, "views", None),
+                        downloads=getattr(p, "downloads", 0),
                         cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
                         created_at=getattr(p, "created_at", None),
                     )
@@ -3989,7 +4940,7 @@ def index(request: Request, q: str = ""):
         most_viewed = []
         for p in most_viewed_raw:
             owner = session.get(User, p.owner_id) if p.owner_id else None
-            most_viewed.append(SimpleNamespace(id=p.id, title=p.title, owner_username=getattr(owner, 'username', None) if owner else None, owner_site_role=getattr(owner, 'site_role', None) if owner else None, views=p.views, filename=p.filename, owner_presentation_count=owner_presentation_counts.get(p.owner_id, 0) if getattr(p, 'owner_id', None) else 0))
+            most_viewed.append(SimpleNamespace(id=p.id, title=p.title, owner_username=getattr(owner, 'username', None) if owner else None, owner_site_role=getattr(owner, 'site_role', None) if owner else None, views=p.views, downloads=getattr(p, 'downloads', 0), filename=p.filename, owner_presentation_count=owner_presentation_counts.get(p.owner_id, 0) if getattr(p, 'owner_id', None) else 0))
 
         # compute featured list for public homepage (top viewed, limit 12)
         featured = []
@@ -4005,6 +4956,7 @@ def index(request: Request, q: str = ""):
                 owner_site_role=getattr(owner, 'site_role', None) if owner else None,
                 owner_email=getattr(owner, 'email', None) if owner else None,
                 views=getattr(p, 'views', 0),
+                downloads=getattr(p, 'downloads', 0),
             ))
         # attach bookmark counts for any listing we will render (batch query to avoid N+1)
         all_ids = set()
@@ -4058,10 +5010,8 @@ def index(request: Request, q: str = ""):
 def api_categories(request: Request):
     """Return a JSON array of category names for client-side lazy loading."""
     try:
-        with Session(engine) as session:
-            cats = session.exec(select(Category).order_by(Category.name)).all()
-            names = [c.name for c in cats if getattr(c, 'name', None)]
-            return JSONResponse(names)
+        names = get_available_category_names()
+        return JSONResponse(names)
     except Exception:
         return JSONResponse([], status_code=200)
 
@@ -4069,96 +5019,187 @@ def api_categories(request: Request):
 @app.get("/featured", response_class=HTMLResponse, name="featured")
 def featured_page(request: Request):
     current_user = get_current_user_optional(request)
-    with Session(engine) as session:
-        # Prefer showing the signed-in user's uploads first, then top presentations by views
-        featured = []
-        if current_user:
-            my_rows = session.exec(
-                select(Presentation)
-                .where(Presentation.owner_id == current_user.id)
-                .order_by(Presentation.created_at.desc())
-                .limit(6)
-            ).all()
-            for p in my_rows:
-                owner = session.get(User, p.owner_id) if p.owner_id else None
-                featured.append(SimpleNamespace(
-                    id=p.id,
-                    title=p.title,
-                    filename=p.filename,
-                    owner_id=p.owner_id,
-                    owner_username=getattr(owner, 'username', None) if owner else None,
-                    owner_site_role=getattr(owner, 'site_role', None) if owner else None,
-                    owner_email=getattr(owner, 'email', None) if owner else None,
-                    views=getattr(p, 'views', 0),
-                ))
+    try:
+        request.state.categories = get_available_category_names()
+    except Exception:
+        if not getattr(request.state, 'categories', None):
+            request.state.categories = []
 
-        # fill remaining slots with top presentations (avoid duplicates)
-        rows = session.exec(select(Presentation).order_by(Presentation.views.desc()).limit(12)).all()
-        seen_ids = {f.id for f in featured}
-        for p in rows:
-            if p.id in seen_ids:
-                continue
-            owner = session.get(User, p.owner_id) if p.owner_id else None
-            featured.append(SimpleNamespace(
-                id=p.id,
-                title=p.title,
-                filename=p.filename,
-                owner_id=p.owner_id,
-                    owner_username=getattr(owner, 'username', None) if owner else None,
-                    owner_site_role=getattr(owner, 'site_role', None) if owner else None,
-                    owner_email=getattr(owner, 'email', None) if owner else None,
-                views=getattr(p, 'views', 0),
-            ))
-        featured = featured[:12]
-        # attach bookmark counts for featured items
-        feat_ids = [f.id for f in featured if getattr(f, 'id', None)]
-        if feat_ids:
+    def _map_p(p: Presentation, owner: Optional[User], cat: Optional[Category]):
+        return SimpleNamespace(
+            id=p.id,
+            title=p.title,
+            description=getattr(p, "description", None),
+            filename=p.filename,
+            mimetype=p.mimetype,
+            owner_id=p.owner_id,
+            owner_username=getattr(owner, "username", None) if owner else None,
+            owner_site_role=getattr(owner, "site_role", None) if owner else None,
+            owner_email=getattr(owner, "email", None) if owner else None,
+            views=getattr(p, "views", 0),
+            downloads=getattr(p, "downloads", 0),
+            cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
+            category=SimpleNamespace(name=cat.name) if cat else None,
+            created_at=getattr(p, "created_at", None),
+        )
+
+    with Session(engine) as session:
+        visibility = (Presentation.privacy == "public")
+        if current_user:
+            visibility = or_(Presentation.privacy == "public", Presentation.owner_id == current_user.id)
+        trending_rows = session.exec(
+            select(Presentation)
+            .where(visibility)
+            .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+            .order_by(Presentation.views.desc())
+            .limit(12)
+        ).all()
+        trending = [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in trending_rows]
+
+        # Because you viewed X
+        because_viewed = []
+        because_title = None
+        if current_user:
+            last_view = session.exec(
+                select(Activity)
+                .where((Activity.user_id == current_user.id) & (Activity.verb == "view"))
+                .order_by(Activity.created_at.desc())
+            ).first()
+            if last_view and last_view.target_id:
+                ref = session.get(Presentation, last_view.target_id)
+                if ref:
+                    because_title = ref.title
+                    cat_id = ref.category_id
+                    if cat_id:
+                        rows = session.exec(
+                            select(Presentation)
+                            .where((Presentation.category_id == cat_id) & (Presentation.id != ref.id) & visibility)
+                            .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+                            .order_by(Presentation.views.desc())
+                            .limit(10)
+                        ).all()
+                        because_viewed = [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in rows]
+        if not because_viewed:
+            rows = session.exec(
+                select(Presentation)
+                .where(visibility)
+                .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+                .order_by(Presentation.created_at.desc())
+                .limit(10)
+            ).all()
+            because_viewed = [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in rows]
+
+        # Popular in Category
+        popular_in_category = []
+        cat_rows = session.exec(
+            select(Category, func.count(Presentation.id))
+            .join(Presentation, Presentation.category_id == Category.id)
+            .where(visibility)
+            .group_by(Category.id)
+            .order_by(desc(func.count(Presentation.id)))
+            .limit(3)
+        ).all()
+        for cat, _count in cat_rows:
+            rows = session.exec(
+                select(Presentation)
+                .where((Presentation.category_id == cat.id) & visibility)
+                .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+                .order_by(Presentation.views.desc())
+                .limit(8)
+            ).all()
+            popular_in_category.append({
+                "category": cat,
+                "items": [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in rows],
+            })
+
+        # From followed creators
+        from_followed = []
+        if current_user:
+            following_ids = session.exec(
+                select(Follow.following_id).where(Follow.follower_id == current_user.id)
+            ).all()
+            fids = [r[0] if isinstance(r, (list, tuple)) else r for r in following_ids]
+            if fids:
+                rows = session.exec(
+                    select(Presentation)
+                    .where(Presentation.owner_id.in_(list(fids)) & visibility)
+                    .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+                    .order_by(Presentation.created_at.desc())
+                    .limit(12)
+                ).all()
+                from_followed = [_map_p(p, getattr(p, "owner", None), getattr(p, "category", None)) for p in rows]
+
+        # Attach bookmark + like counts across all sections
+        all_ids = {p.id for p in trending + because_viewed + from_followed}
+        for block in popular_in_category:
+            for item in block["items"]:
+                all_ids.add(item.id)
+        if all_ids:
             rows = session.exec(
                 select(Bookmark.presentation_id, func.count(Bookmark.id))
-                .where(Bookmark.presentation_id.in_(list(feat_ids)))
+                .where(Bookmark.presentation_id.in_(list(all_ids)))
                 .group_by(Bookmark.presentation_id)
             ).all()
             bc = {int(r[0]): int(r[1]) for r in rows}
-        else:
-            bc = {}
-        for f in featured:
-            setattr(f, 'bookmarks_count', bc.get(getattr(f, 'id', None), 0))
-
-        # attach like counts for featured items
-        if feat_ids:
             rows_likes = session.exec(
                 select(Like.presentation_id, func.count(Like.id))
-                .where(Like.presentation_id.in_(list(feat_ids)))
+                .where(Like.presentation_id.in_(list(all_ids)))
                 .group_by(Like.presentation_id)
             ).all()
             lc = {int(r[0]): int(r[1]) for r in rows_likes}
         else:
+            bc = {}
             lc = {}
-        for f in featured:
-            setattr(f, 'likes_count', lc.get(getattr(f, 'id', None), 0))
+        for item in list(trending) + list(because_viewed) + list(from_followed):
+            setattr(item, "bookmarks_count", bc.get(item.id, 0))
+            setattr(item, "likes_count", lc.get(item.id, 0))
+        for block in popular_in_category:
+            for item in block["items"]:
+                setattr(item, "bookmarks_count", bc.get(item.id, 0))
+                setattr(item, "likes_count", lc.get(item.id, 0))
 
-        # attach owner's presentation counts for featured owners
-        feat_owner_ids = {f.owner_id for f in featured if getattr(f, 'owner_id', None) is not None}
-        if feat_owner_ids:
-            rows_oc = session.exec(
-                select(Presentation.owner_id, func.count(Presentation.id)).where(Presentation.owner_id.in_(list(feat_owner_ids))).group_by(Presentation.owner_id)
+        # Attach owner presentation counts for creator badges on cards
+        owner_ids = {p.owner_id for p in trending + because_viewed + from_followed if getattr(p, "owner_id", None)}
+        for block in popular_in_category:
+            for item in block["items"]:
+                if getattr(item, "owner_id", None):
+                    owner_ids.add(item.owner_id)
+        if owner_ids:
+            rows = session.exec(
+                select(Presentation.owner_id, func.count(Presentation.id))
+                .where(Presentation.owner_id.in_(list(owner_ids)))
+                .group_by(Presentation.owner_id)
             ).all()
-            feat_owner_counts = {int(r[0]): int(r[1]) for r in rows_oc}
+            owner_counts = {int(r[0]): int(r[1]) for r in rows}
         else:
-            feat_owner_counts = {}
-        for f in featured:
-            setattr(f, 'owner_presentation_count', feat_owner_counts.get(getattr(f, 'owner_id', None), 0))
+            owner_counts = {}
+        for item in list(trending) + list(because_viewed) + list(from_followed):
+            setattr(item, "owner_presentation_count", owner_counts.get(getattr(item, "owner_id", None), 0))
+        for block in popular_in_category:
+            for item in block["items"]:
+                setattr(item, "owner_presentation_count", owner_counts.get(getattr(item, "owner_id", None), 0))
 
-    return templates.TemplateResponse("featured.html", {"request": request, "featured": featured, "current_user": current_user})
+    return templates.TemplateResponse(
+        "feed.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "trending": trending,
+            "because_viewed": because_viewed,
+            "because_title": because_title,
+            "popular_in_category": popular_in_category,
+            "from_followed": from_followed,
+        },
+    )
     
 @app.get("/set-language")
 def set_language(request: Request, lang: str = "en"):
     """Set a simple UI language preference via cookie and redirect back.
 
-    Supported values: en, fr, es. Anything else falls back to en.
+    Supported values: en, fr, es, pt, de, ar, hi, zh, ja. Anything else falls back to en.
     """
     lang = (lang or "en").lower()
-    if lang not in {"en", "fr", "es"}:
+    if lang not in {"en", "fr", "es", "pt", "de", "ar", "hi", "zh", "ja"}:
         lang = "en"
     referer = request.headers.get("referer") or "/"
     resp = RedirectResponse(url=referer, status_code=status.HTTP_302_FOUND)
@@ -4500,7 +5541,47 @@ async def classroom_websocket(websocket: WebSocket, classroom_id: int):
     try:
         while True:
             data = await websocket.receive_json()
-            if data.get('type') != 'message':
+            dtype = data.get('type')
+            if dtype == 'typing':
+                payload = {
+                    'type': 'typing',
+                    'user_id': current_user.id,
+                    'username': current_user.username,
+                    'status': data.get('status') or 'start',
+                }
+                # broadcast typing to all connected clients in this classroom
+                dead: list[WebSocket] = []
+                for ws in list(room_conns.get(int(classroom_id), set())):
+                    try:
+                        await ws.send_json(payload)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    try:
+                        room_conns.get(int(classroom_id), set()).discard(ws)
+                    except Exception:
+                        pass
+                continue
+            if dtype == 'seen':
+                payload = {
+                    'type': 'seen',
+                    'user_id': current_user.id,
+                    'username': current_user.username,
+                    'message_id': data.get('message_id'),
+                }
+                dead: list[WebSocket] = []
+                for ws in list(room_conns.get(int(classroom_id), set())):
+                    try:
+                        await ws.send_json(payload)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    try:
+                        room_conns.get(int(classroom_id), set()).discard(ws)
+                    except Exception:
+                        pass
+                continue
+            if dtype != 'message':
                 continue
             content = (data.get('content') or '').strip()
             if not content:
@@ -4546,6 +5627,366 @@ async def classroom_websocket(websocket: WebSocket, classroom_id: int):
             room_conns.get(int(classroom_id), set()).discard(websocket)
         except Exception:
             pass
+
+
+@app.websocket('/ws/spaces/{space_id}')
+async def space_websocket(websocket: WebSocket, space_id: int):
+    """Group chat WebSocket for a specific space.
+
+    All connected space members receive broadcast messages.
+    Client sends payloads like:
+    {"type": "message", "content": "Hello"}
+    """
+    await websocket.accept()
+    from sqlmodel import select as _select
+
+    # resolve current user from access_token cookie
+    current_user: Optional[User] = None
+    try:
+        cookie_val = websocket.cookies.get('access_token')
+        if cookie_val:
+            raw = cookie_val.split(' ', 1)[-1] if ' ' in cookie_val else cookie_val
+            payload = jwt.decode(raw, SECRET_KEY, algorithms=[ALGORITHM])
+            uname = payload.get('sub')
+            if uname:
+                with Session(engine) as session:
+                    u = session.exec(_select(User).where(User.username == uname)).first()
+                    current_user = u
+    except Exception:
+        current_user = None
+
+    if not current_user:
+        await websocket.close(code=1008)
+        return
+
+    # verify space membership (compat: accept classroom_id during transition)
+    with Session(engine) as session:
+        mem = session.exec(
+            _select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+            )
+        ).first()
+        if not mem:
+            await websocket.close(code=1008)
+            return
+
+    # simple in-memory set of connections per space
+    if not hasattr(space_websocket, '_room_conns'):
+        space_websocket._room_conns = {}
+    room_conns: Dict[int, Set[WebSocket]] = space_websocket._room_conns
+    room_set = room_conns.setdefault(int(space_id), set())
+    room_set.add(websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            dtype = data.get('type')
+            if dtype == 'typing':
+                payload = {
+                    'type': 'typing',
+                    'user_id': current_user.id,
+                    'username': current_user.username,
+                    'status': data.get('status') or 'start',
+                }
+                dead: list[WebSocket] = []
+                for ws in list(room_conns.get(int(space_id), set())):
+                    try:
+                        await ws.send_json(payload)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    try:
+                        room_conns.get(int(space_id), set()).discard(ws)
+                    except Exception:
+                        pass
+                continue
+            if dtype == 'seen':
+                payload = {
+                    'type': 'seen',
+                    'user_id': current_user.id,
+                    'username': current_user.username,
+                    'message_id': data.get('message_id'),
+                }
+                dead: list[WebSocket] = []
+                for ws in list(room_conns.get(int(space_id), set())):
+                    try:
+                        await ws.send_json(payload)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    try:
+                        room_conns.get(int(space_id), set()).discard(ws)
+                    except Exception:
+                        pass
+                continue
+            if dtype != 'message':
+                continue
+            content = (data.get('content') or '').strip()
+            if not content:
+                continue
+            with Session(engine) as session:
+                msg = SpaceMessage(
+                    space_id=space_id,
+                    sender_id=current_user.id,
+                    content=content,
+                )
+                session.add(msg)
+                session.commit()
+                session.refresh(msg)
+            payload = {
+                'type': 'message',
+                'message': {
+                    'id': msg.id,
+                    'space_id': space_id,
+                    'sender_id': current_user.id,
+                    'sender_name': current_user.username,
+                    'content': msg.content,
+                    'created_at': msg.created_at.isoformat(),
+                },
+            }
+            dead: list[WebSocket] = []
+            for ws in list(room_conns.get(int(space_id), set())):
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                try:
+                    room_conns.get(int(space_id), set()).discard(ws)
+                except Exception:
+                    pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        try:
+            room_conns.get(int(space_id), set()).discard(websocket)
+        except Exception:
+            pass
+
+
+def _video_parse_space_id(room_id: Any) -> Optional[int]:
+    try:
+        if isinstance(room_id, str) and room_id.startswith('space:'):
+            return int(room_id.split(':', 1)[1])
+        return int(room_id)
+    except Exception:
+        return None
+
+
+def _video_get_ice_servers() -> list[dict]:
+    raw = os.getenv('VIDEO_ICE_SERVERS')
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    stun = os.getenv('VIDEO_STUN_SERVER', 'stun:stun.l.google.com:19302')
+    servers = [{"urls": [stun]}]
+    turn = os.getenv('VIDEO_TURN_SERVER')
+    if turn:
+        entry: dict[str, Any] = {"urls": [turn]}
+        username = os.getenv('VIDEO_TURN_USERNAME')
+        credential = os.getenv('VIDEO_TURN_CREDENTIAL')
+        if username and credential:
+            entry["username"] = username
+            entry["credential"] = credential
+        servers.append(entry)
+    return servers
+
+
+def _video_get_ws_user(websocket: WebSocket) -> Optional[User]:
+    try:
+        cookie_val = websocket.cookies.get('access_token')
+        if not cookie_val:
+            return None
+        raw = cookie_val.split(' ', 1)[-1] if ' ' in cookie_val else cookie_val
+        payload = jwt.decode(raw, SECRET_KEY, algorithms=[ALGORITHM])
+        uname = payload.get('sub')
+        if not uname:
+            return None
+        with Session(engine) as session:
+            return session.exec(select(User).where(User.username == uname)).first()
+    except Exception:
+        return None
+
+
+async def _video_send_to_user(user_id: int, payload: dict) -> None:
+    conns = list(video_state.user_sockets.get(int(user_id), set()))
+    for ws in conns:
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            try:
+                video_state.unregister_socket(ws)
+            except Exception:
+                pass
+
+
+async def _video_broadcast_room(space_id: int, payload: dict, exclude_user_id: Optional[int] = None) -> None:
+    user_ids = list(video_state.room_users.get(int(space_id), set()))
+    for uid in user_ids:
+        if exclude_user_id is not None and int(uid) == int(exclude_user_id):
+            continue
+        await _video_send_to_user(uid, payload)
+
+
+@app.get('/api/video/config')
+def video_config(current_user: User = Depends(get_current_user)):
+    return {"iceServers": _video_get_ice_servers()}
+
+
+@app.get('/api/spaces/{space_id}/meeting')
+def space_meeting_status(space_id: int, current_user: User = Depends(get_current_user)):
+    return {
+        "space_id": int(space_id),
+        "active": video_state.is_meeting_active(space_id),
+    }
+
+
+@app.websocket('/ws/video')
+async def video_signaling(websocket: WebSocket):
+    await websocket.accept()
+    current_user = _video_get_ws_user(websocket)
+    if not current_user:
+        await websocket.close(code=1008)
+        return
+    video_state.register_socket(current_user.id, websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            event = data.get('event') or data.get('type')
+            payload = data.get('payload') or {}
+
+            if event == 'join-room':
+                room_id = payload.get('room_id')
+                space_id = _video_parse_space_id(room_id)
+                if not space_id:
+                    await websocket.send_json({"event": "error", "payload": {"message": "Invalid room"}})
+                    continue
+
+                with Session(engine) as session:
+                    mem = session.exec(
+                        select(Membership).where(
+                            (Membership.user_id == current_user.id)
+                            & ((Membership.space_id == space_id) | (Membership.classroom_id == space_id))
+                        )
+                    ).first()
+                if not mem:
+                    await websocket.send_json({"event": "error", "payload": {"message": "Not a member of this space"}})
+                    continue
+
+                if not video_state.is_meeting_active(space_id):
+                    if mem.role not in ['teacher', 'admin']:
+                        await websocket.send_json({"event": "meeting-inactive", "payload": {"space_id": space_id}})
+                        continue
+                    video_state.start_meeting(space_id, current_user.id)
+
+                video_state.join_room(current_user.id, space_id)
+                if video_state.meetings.get(space_id):
+                    video_state.meetings[space_id]['participants'].add(current_user.id)
+
+                existing_users = [uid for uid in video_state.room_users.get(space_id, set()) if uid != current_user.id]
+                await websocket.send_json({
+                    "event": "room-users",
+                    "payload": {"space_id": space_id, "users": existing_users},
+                })
+                await _video_broadcast_room(space_id, {
+                    "event": "user-joined",
+                    "payload": {"space_id": space_id, "user_id": current_user.id, "username": current_user.username},
+                }, exclude_user_id=current_user.id)
+                continue
+
+            if event == 'leave-room':
+                room_id = payload.get('room_id')
+                space_id = _video_parse_space_id(room_id)
+                if not space_id:
+                    continue
+                video_state.leave_room(current_user.id, space_id)
+                await _video_broadcast_room(space_id, {
+                    "event": "user-left",
+                    "payload": {"space_id": space_id, "user_id": current_user.id},
+                })
+                meeting = video_state.meetings.get(space_id)
+                if meeting and meeting.get('host_id') == current_user.id:
+                    video_state.end_meeting(space_id)
+                    await _video_broadcast_room(space_id, {
+                        "event": "meeting-ended",
+                        "payload": {"space_id": space_id},
+                    })
+                continue
+
+            if event in ['offer', 'answer', 'ice-candidate']:
+                target_id = payload.get('target_id')
+                if not target_id:
+                    continue
+                forward_payload = dict(payload)
+                forward_payload.update({
+                    "sender_id": current_user.id,
+                    "sender_username": current_user.username,
+                })
+                forward = {"event": event, "payload": forward_payload}
+                await _video_send_to_user(int(target_id), forward)
+                continue
+
+            if event == 'call-user':
+                target_id = payload.get('target_id')
+                if not target_id:
+                    continue
+                await _video_send_to_user(int(target_id), {
+                    "event": "incoming-call",
+                    "payload": {
+                        "call_id": payload.get('call_id'),
+                        "from_id": current_user.id,
+                        "from_username": current_user.username,
+                        "media": payload.get('media', 'video'),
+                    },
+                })
+                continue
+
+            if event in ['accept-call', 'reject-call', 'end-call']:
+                target_id = payload.get('target_id')
+                if not target_id:
+                    continue
+                forward_payload = dict(payload)
+                forward_payload.update({
+                    "sender_id": current_user.id,
+                    "sender_username": current_user.username,
+                })
+                await _video_send_to_user(int(target_id), {
+                    "event": event,
+                    "payload": forward_payload,
+                })
+                continue
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        user_id = video_state.unregister_socket(websocket)
+        if user_id is not None:
+            for space_id in list(video_state.user_rooms.get(int(user_id), set())):
+                video_state.leave_room(int(user_id), int(space_id))
+                await _video_broadcast_room(int(space_id), {
+                    "event": "user-left",
+                    "payload": {"space_id": int(space_id), "user_id": int(user_id)},
+                })
+                meeting = video_state.meetings.get(int(space_id))
+                if meeting and meeting.get('host_id') == int(user_id):
+                    video_state.end_meeting(int(space_id))
+                    await _video_broadcast_room(int(space_id), {
+                        "event": "meeting-ended",
+                        "payload": {"space_id": int(space_id)},
+                    })
 
 
 @app.post('/api/chat/send')
@@ -4730,6 +6171,11 @@ def accept_classroom_invite(nid: int, current_user: User = Depends(get_current_u
         if not exists:
             m = Membership(user_id=current_user.id, classroom_id=classroom.id, role='student')
             session.add(m)
+            try:
+                cm = ClassroomMessage(classroom_id=classroom.id, sender_id=current_user.id, content=f"[system] {current_user.username} joined the classroom.")
+                session.add(cm)
+            except Exception:
+                pass
 
         n.read = True
         session.add(n)
@@ -4865,27 +6311,27 @@ def notifications_page(request: Request, current_user: User = Depends(get_curren
             notif_items.append(
                 SimpleNamespace(
                     id=n.id,
-                    read=bool(n.read),
-                    created_at=n.created_at,
                     message=message,
                     actor_username=actor_username,
                     actor_avatar=actor_avatar,
                     actor_site_role=actor_site_role,
                     link=link,
+                    created_at=n.created_at,
+                    read=n.read,
                     accept_url=accept_url,
                     decline_url=decline_url,
                 )
             )
 
-    return templates.TemplateResponse(
-        "notifications.html",
-        {
-            "request": request,
-            "notifications": notif_items,
-            "current_user": current_user,
-            "active_filter": active_filter,
-        },
-    )
+        return templates.TemplateResponse(
+            "notifications.html",
+            {
+                "request": request,
+                "notifications": notif_items,
+                "current_user": current_user,
+                "active_filter": active_filter,
+            },
+        )
 
 
 @app.post('/api/messages/{other_id}')
@@ -5273,6 +6719,8 @@ async def upload_post(
 
     # Ensure description is a string
     desc_clean = (description or "").strip()
+    ai_title = None
+    ai_description = None
 
     try:
         # Allowed extensions for presentations (include common video types)
@@ -5311,6 +6759,46 @@ async def upload_post(
                     )
                 buffer.write(chunk)
 
+        # AI auto title/description (best-effort) when missing or short
+        try:
+            needs_title = len(title_clean.strip()) < 6
+            needs_desc = len(desc_clean.strip()) < 12
+            if needs_title or needs_desc:
+                sample_text = ""
+                if file_ext == ".pdf" and fitz is not None:
+                    try:
+                        doc = fitz.open(str(save_path))
+                        sample_text = "\n".join([doc[i].get_text() for i in range(min(len(doc), 3))])
+                        doc.close()
+                    except Exception:
+                        sample_text = ""
+                prompt = (
+                    "Generate a clean title and a 1-2 sentence description for this presentation. "
+                    "Return JSON with keys 'title' and 'description' only.\n\n"
+                    f"Original title: {title_clean}\n"
+                    f"Existing description: {desc_clean}\n"
+                    f"Extracted text: {sample_text[:2000]}"
+                )
+                ai_raw = chat_completion(
+                    [{"role": "user", "content": prompt}],
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
+                    max_tokens=220,
+                    temperature=0.4,
+                )
+                try:
+                    parsed = json.loads(ai_raw.strip())
+                    ai_title = (parsed.get("title") or "").strip() or None
+                    ai_description = (parsed.get("description") or "").strip() or None
+                except Exception:
+                    # fallback: split first line as title, rest as description
+                    parts = [p.strip() for p in ai_raw.split("\n") if p.strip()]
+                    if parts:
+                        ai_title = parts[0][:120]
+                        if len(parts) > 1:
+                            ai_description = " ".join(parts[1:])[:400]
+        except Exception:
+            pass
+
         # normalise advanced settings
         privacy_val = privacy if privacy in {"public", "private"} else "public"
         allow_download_val = bool(allow_download)
@@ -5323,6 +6811,8 @@ async def upload_post(
             owner_id=current_user.id,
             privacy=privacy_val,
             allow_download=allow_download_val,
+            ai_title=ai_title,
+            ai_description=ai_description,
         )
         with Session(engine) as session:
             # handle category (auto-classify when missing)
@@ -5470,6 +6960,46 @@ async def api_upload(
                 )
             buffer.write(chunk)
 
+    ai_title = None
+    ai_description = None
+    try:
+        needs_title = not title or len((title or "").strip()) < 6
+        needs_desc = not description or len((description or "").strip()) < 12
+        if needs_title or needs_desc:
+            sample_text = ""
+            if file_ext == ".pdf" and fitz is not None:
+                try:
+                    doc = fitz.open(str(save_path))
+                    sample_text = "\n".join([doc[i].get_text() for i in range(min(len(doc), 3))])
+                    doc.close()
+                except Exception:
+                    sample_text = ""
+            prompt = (
+                "Generate a clean title and a 1-2 sentence description for this presentation. "
+                "Return JSON with keys 'title' and 'description' only.\n\n"
+                f"Original title: {title or ''}\n"
+                f"Existing description: {description or ''}\n"
+                f"Extracted text: {sample_text[:2000]}"
+            )
+            ai_raw = chat_completion(
+                [{"role": "user", "content": prompt}],
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini") if get_ai_provider() == "openai" else os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
+                max_tokens=220,
+                temperature=0.4,
+            )
+            try:
+                parsed = json.loads(ai_raw.strip())
+                ai_title = (parsed.get("title") or "").strip() or None
+                ai_description = (parsed.get("description") or "").strip() or None
+            except Exception:
+                parts = [p.strip() for p in ai_raw.split("\n") if p.strip()]
+                if parts:
+                    ai_title = parts[0][:120]
+                    if len(parts) > 1:
+                        ai_description = " ".join(parts[1:])[:400]
+    except Exception:
+        pass
+
     with Session(engine) as session:
         p = Presentation(
             title=title or Path(file.filename).stem,
@@ -5479,6 +7009,8 @@ async def api_upload(
             owner_id=current_user.id if current_user else None,
             privacy="public",
             allow_download=True,
+            ai_title=ai_title,
+            ai_description=ai_description,
         )
 
         # optional category
@@ -5614,6 +7146,14 @@ def view_presentation(request: Request, presentation_id: int):
         session.add(p)
         session.commit()
         session.refresh(p)
+        # log view activity (best-effort)
+        try:
+            if current_user and current_user.id:
+                act = Activity(user_id=current_user.id, verb="view", target_id=p.id)
+                session.add(act)
+                session.commit()
+        except Exception:
+            session.rollback()
         comments = session.exec(
             select(Comment).where(Comment.presentation_id == presentation_id)
         ).all()
@@ -5629,6 +7169,37 @@ def view_presentation(request: Request, presentation_id: int):
         likes = session.exec(
             select(Like).where(Like.presentation_id == presentation_id)
         ).all()
+
+        # AI results (summary/flashcards/quiz/mindmap) if available
+        ai_rows = session.exec(
+            select(AIResult)
+            .where(AIResult.presentation_id == presentation_id)
+            .order_by(AIResult.created_at.desc())
+        ).all()
+        ai_summary = None
+        ai_flashcards = None
+        ai_quiz = None
+        ai_mindmap = None
+        def _is_ai_error(text: str | None) -> bool:
+            if not text:
+                return False
+            t = text.lower()
+            return (
+                "openai error" in t
+                or "insufficient_quota" in t
+                or "rate limit" in t
+                or "quota" in t
+                or "api error" in t
+            )
+        for r in ai_rows:
+            if r.task_type == "summary" and not ai_summary and not _is_ai_error(r.result):
+                ai_summary = r.result
+            if r.task_type == "flashcards" and not ai_flashcards and not _is_ai_error(r.result):
+                ai_flashcards = r.result
+            if r.task_type == "quiz" and not ai_quiz and not _is_ai_error(r.result):
+                ai_quiz = r.result
+            if r.task_type == "mindmap" and not ai_mindmap and not _is_ai_error(r.result):
+                ai_mindmap = r.result
 
         # Always attempt conversion for new presentations (enqueue + sync fallback)
         viewer_url = None
@@ -5654,24 +7225,10 @@ def view_presentation(request: Request, presentation_id: int):
                         conversion_status = "queued"
                     except Exception:
                         conversion_status = "failed"
-                # synchronous fallback: attempt to convert immediately (best-effort)
-                try:
-                    from .tasks import convert_presentation
-                    convert_presentation(p.id, p.filename)
-                except Exception:
-                    pass
-                # After conversion, check for a converted PDF
-                with Session(engine) as _s:
-                    latest_job = _s.exec(
-                        select(ConversionJob)
-                        .where(ConversionJob.presentation_id == presentation_id)
-                        .order_by(ConversionJob.created_at.desc())
-                    ).first()
-                    if latest_job and latest_job.result:
-                        conv_path = Path(UPLOAD_DIR) / latest_job.result
-                        if conv_path.exists():
-                            viewer_url = f"/presentations/{presentation_id}/converted_pdf?inline=1"
-                            conversion_status = "ready"
+                # synchronous fallback removed from inside DB session to avoid
+                # potential SQLite locking when worker functions open their own
+                # sessions. A best-effort conversion will be attempted after
+                # the session closes.
                 if not viewer_url:
                     conversion_status = job.status if job else "queued"
             elif ext in ('.mp4', '.mov', '.m4v', '.webm'):
@@ -5692,13 +7249,33 @@ def view_presentation(request: Request, presentation_id: int):
             else:
                 conversion_status = "unsupported"
 
+        # Prefer cached thumbnail (Redis/filesystem) for immediate render
+        try:
+            redis_url = os.getenv('REDIS_URL')
+            if _redis and redis_url:
+                rc = _redis.from_url(redis_url)
+                key = f"presentation:{presentation_id}:thumbnails"
+                val = rc.get(key)
+                if val:
+                    try:
+                        urls = json.loads(val)
+                        if urls:
+                            first = urls[0]
+                            if f"/presentations/{presentation_id}/slide/" in first:
+                                first = f"/media/thumbs/{presentation_id}/slide_0.png"
+                            viewer_url = first
+                            conversion_status = "ready"
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         # If still no viewer_url, but slide 0 exists, show it as a fallback
-        if not viewer_url and p.filename:
-            thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
-            slide0 = thumbs_dir / "slide_0.png"
-            if slide0.exists():
-                viewer_url = f"/presentations/{presentation_id}/slide/0"
-                conversion_status = "ready"
+        thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
+        slide0 = thumbs_dir / "slide_0.png"
+        if slide0.exists():
+            viewer_url = f"/media/thumbs/{presentation_id}/slide_0.png"
+            conversion_status = "ready"
 
         # build a lightweight presentation object for templates (avoid setting attrs on SQLModel)
         if owner:
@@ -5716,19 +7293,55 @@ def view_presentation(request: Request, presentation_id: int):
         owner_username=owner_username,
         owner_email=owner_email,
         owner_avatar=owner_avatar,
+        owner_site_role=getattr(owner, 'site_role', None) if owner else None,
         views=p.views,
         cover_url=getattr(p, 'cover_url', None) if hasattr(p, 'cover_url') else None,
         created_at=getattr(p, 'created_at', None),
+        downloads=getattr(p, 'downloads', 0),
+        ai_title=getattr(p, 'ai_title', None),
+        ai_description=getattr(p, 'ai_description', None),
+        ai_summary=getattr(p, 'ai_summary', None),
     )
+
+    # Best-effort synchronous conversion (moved outside DB session to avoid locks)
+    try:
+        if p.filename:
+            ext = Path(p.filename).suffix.lower()
+            if ext in {'.ppt', '.pptx', '.pptm'} and not viewer_url:
+                try:
+                    from .tasks import convert_presentation
+                    convert_presentation(p.id, p.filename)
+                except Exception:
+                    # conversion failed or not available; continue gracefully
+                    pass
+                # check for a converted PDF result after attempting conversion
+                with Session(engine) as _s:
+                    latest_job = _s.exec(
+                        select(ConversionJob)
+                        .where(ConversionJob.presentation_id == presentation_id)
+                        .order_by(ConversionJob.created_at.desc())
+                    ).first()
+                    if latest_job and latest_job.result:
+                        conv_path = Path(UPLOAD_DIR) / latest_job.result
+                        if conv_path.exists():
+                            viewer_url = f"/presentations/{presentation_id}/converted_pdf?inline=1"
+                            conversion_status = "ready"
+    except Exception:
+        # best-effort only; do not block rendering the page on errors here
+        pass
 
     # determine follow status for current user (subscribe)
     cu = getattr(request.state, 'current_user', None)
     # csrf token for owner-only actions (e.g., delete)
     csrf = None
+    csrf_created = False
     try:
         csrf = request.cookies.get('csrf_token') if hasattr(request, 'cookies') else None
     except Exception:
         csrf = None
+    if not csrf:
+        csrf = uuid.uuid4().hex
+        csrf_created = True
     is_following = False
     followers_count = 0
     owner_presentation_count = 0
@@ -5737,6 +7350,8 @@ def view_presentation(request: Request, presentation_id: int):
     is_bookmarked = False
     # default for like state for current user
     is_liked = False
+    creator_badges: list[str] = []
+    collections = []
     if p.owner_id is not None:
         with Session(engine) as session:
             followers = session.exec(select(Follow).where(Follow.following_id == p.owner_id)).all()
@@ -5746,6 +7361,10 @@ def view_presentation(request: Request, presentation_id: int):
                     select(Follow).where((Follow.follower_id == cu.id) & (Follow.following_id == p.owner_id))
                 ).first()
                 is_following = bool(exists)
+                # collections for save-to-folder UX
+                collections = session.exec(
+                    select(Collection).where(Collection.user_id == cu.id).order_by(Collection.created_at.desc())
+                ).all()
                 # did the current user like this presentation?
                 try:
                     liked_row = session.exec(
@@ -5776,8 +7395,24 @@ def view_presentation(request: Request, presentation_id: int):
                         owner_presentation_count = int(owner_presentation_count)
                 except Exception:
                     owner_presentation_count = 0
+                try:
+                    totals = session.exec(
+                        select(func.coalesce(func.sum(Presentation.views), 0), func.coalesce(func.sum(Presentation.downloads), 0))
+                        .where(Presentation.owner_id == p.owner_id)
+                    ).one()
+                    total_views = int(totals[0] or 0)
+                    total_downloads = int(totals[1] or 0)
+                except Exception:
+                    total_views = 0
+                    total_downloads = 0
+                creator_badges = _compute_creator_badges(
+                    getattr(owner, "site_role", None) if owner else None,
+                    total_views,
+                    total_downloads,
+                    followers_count,
+                )
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "presentation.html",
         {
             "request": request,
@@ -5788,16 +7423,25 @@ def view_presentation(request: Request, presentation_id: int):
             "viewer_url": viewer_url,
             "conversion_status": conversion_status,
             "original_url": original_url,
+            "ai_summary": ai_summary or (p.ai_summary if not _is_ai_error(getattr(p, "ai_summary", None)) else None),
+            "ai_flashcards": ai_flashcards,
+            "ai_quiz": ai_quiz,
+            "ai_mindmap": ai_mindmap,
             "is_following": is_following,
             "followers_count": followers_count,
             "bookmarks_count": bookmarks_count,
             "is_bookmarked": is_bookmarked,
             "owner_presentation_count": owner_presentation_count,
             "is_liked": is_liked,
+            "creator_badges": creator_badges,
+            "collections": collections,
             "current_user": cu,
             "csrf_token": csrf,
         },
     )
+    if csrf_created:
+        response.set_cookie('csrf_token', csrf, samesite='Lax')
+    return response
 
 
 @app.post("/presentations/{presentation_id}/delete")
@@ -6174,7 +7818,7 @@ def list_thumbnails(presentation_id: int):
                                 if _redis and redis_url:
                                     rc = _redis.from_url(redis_url)
                                     key = f"presentation:{presentation_id}:thumbnails"
-                                    urls = [f"/presentations/{presentation_id}/slide/{i}" for i in range(len(thumbs))]
+                                    urls = [f"/media/thumbs/{presentation_id}/slide_{i}.png" for i in range(len(thumbs))]
                                     try:
                                         rc.set(key, json.dumps(urls))
                                         rc.expire(key, 7 * 24 * 3600)
@@ -6195,7 +7839,7 @@ def list_thumbnails(presentation_id: int):
 
     files = sorted(thumbs_dir.glob("slide_*.png"))
     # return URLs relative to server
-    urls = [f"/presentations/{presentation_id}/slide/{i}" for i in range(len(files))]
+    urls = [f"/media/thumbs/{presentation_id}/slide_{i}.png" for i in range(len(files))]
     logger.debug("Returning %d thumbnail urls for presentation %s", len(urls), presentation_id)
     return {"thumbnails": urls}
 
@@ -6282,7 +7926,7 @@ def debug_run_convert(presentation_id: int):
         redis_url = os.getenv('REDIS_URL')
         if _redis and redis_url and result.get('files'):
             rc = _redis.from_url(redis_url)
-            urls = [f"/presentations/{presentation_id}/slide/{i}" for i in range(len(result['files']))]
+            urls = [f"/media/thumbs/{presentation_id}/slide_{i}.png" for i in range(len(result['files']))]
             try:
                 rc.set(f"presentation:{presentation_id}:thumbnails", json.dumps(urls))
                 rc.expire(f"presentation:{presentation_id}:thumbnails", 7 * 24 * 3600)
@@ -6296,9 +7940,18 @@ def debug_run_convert(presentation_id: int):
 
 
 @app.get("/presentations/{presentation_id}/slide/{index}")
-def get_slide_image(presentation_id: int, index: int):
+def get_slide_image(
+    presentation_id: int,
+    index: int,
+    hd: bool = Query(False),
+    quality: float = Query(1.0, ge=1.0, le=8.0),
+):
     thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
-    path = thumbs_dir / f"slide_{index}.png"
+    thumbs_hd_dir = Path(UPLOAD_DIR) / "thumbs_hd" / str(presentation_id)
+    quality_bucket = f"q{int(round(quality * 100))}"
+    target_dir = (thumbs_hd_dir / quality_bucket) if hd else thumbs_dir
+    path = target_dir / f"slide_{index}.png"
+    fallback_path = thumbs_dir / f"slide_{index}.png"
     if not path.exists():
         # Attempt to generate the requested slide on-demand from an available PDF.
         # Prefer a converted PDF (from ConversionJob.result), then the original upload.
@@ -6332,12 +7985,19 @@ def get_slide_image(presentation_id: int, index: int):
 
         # Try to render a PNG for the requested page if we found a PDF
         if pdf_path:
-            thumbs_dir.mkdir(parents=True, exist_ok=True)
+            target_dir.mkdir(parents=True, exist_ok=True)
             try:
                 if fitz is not None:
                     doc = fitz.open(str(pdf_path))
                     if index < doc.page_count:
-                        mat = fitz.Matrix(float(os.getenv('THUMBNAIL_SCALE','2.0')), float(os.getenv('THUMBNAIL_SCALE','2.0')))
+                        # Use quality-aware HD scale so high zoom requests can be generated crisply.
+                        base_hd_scale = float(os.getenv('HD_SLIDE_SCALE', '3.0'))
+                        base_thumb_scale = float(os.getenv('THUMBNAIL_SCALE', '2.0'))
+                        if hd:
+                            scale = min(12.0, base_hd_scale * quality)
+                        else:
+                            scale = base_thumb_scale
+                        mat = fitz.Matrix(scale, scale)
                         page = doc.load_page(index)
                         pix = page.get_pixmap(matrix=mat)
                         out_path = path
@@ -6346,14 +8006,18 @@ def get_slide_image(presentation_id: int, index: int):
                         return FileResponse(out_path, media_type='image/png', filename=out_path.name)
                 # Fallback: try ImageMagick `convert` to generate a PNG for the page
                 try:
-                    pattern = str(thumbs_dir / 'slide_%d.png')
-                    subprocess.run(['convert', str(pdf_path), '-thumbnail', 'x2000', pattern], check=True)
+                    pattern = str(target_dir / 'slide_%d.png')
+                    render_size = f"x{min(6000, int(2500 * quality))}" if hd else 'x2000'
+                    subprocess.run(['convert', str(pdf_path), '-thumbnail', render_size, pattern], check=True)
                     if path.exists():
                         return FileResponse(path, media_type='image/png', filename=path.name)
                 except Exception:
                     pass
             except Exception:
                 pass
+
+        if hd and fallback_path.exists():
+            return FileResponse(fallback_path, media_type='image/png', filename=fallback_path.name)
 
         raise HTTPException(status_code=404, detail='Slide not found')
     return FileResponse(path, media_type="image/png", filename=path.name)
@@ -6367,11 +8031,20 @@ def get_converted_pdf(presentation_id: int, inline: bool = Query(False)):
             .where(ConversionJob.presentation_id == presentation_id)
             .order_by(ConversionJob.created_at.desc())
         ).first()
-        if not job or not job.result:
+        pdf_path = None
+        if job and job.result:
+            cand = Path(UPLOAD_DIR) / job.result
+            if cand.exists() and cand.suffix.lower() == ".pdf":
+                pdf_path = cand
+        if not pdf_path:
+            # fallback to original PDF upload if available
+            p = session.get(Presentation, presentation_id)
+            if p and getattr(p, 'filename', None):
+                cand = Path(UPLOAD_DIR) / p.filename
+                if cand.exists() and cand.suffix.lower() == ".pdf":
+                    pdf_path = cand
+        if not pdf_path or not pdf_path.exists():
             raise HTTPException(status_code=404, detail="Converted PDF not found")
-        pdf_path = Path(UPLOAD_DIR) / job.result
-        if not pdf_path.exists():
-            raise HTTPException(status_code=404, detail="Converted PDF missing on disk")
 
     if inline:
         return FileResponse(
@@ -6399,6 +8072,81 @@ def manual_enqueue_conversion(
     # enqueue using the original filename
     job_id = enqueue_conversion(presentation_id, p.filename)
     return {"enqueued": True, "job_id": job_id}
+
+
+@app.get("/presentations/{presentation_id}/download")
+def download_presentation_variant(
+    request: Request,
+    presentation_id: int,
+    kind: str = Query("original"),
+    current_user: User = Depends(get_current_user_optional),
+):
+    """Download variants: original|pdf|images|slides.
+    - pdf: converted PDF if available, otherwise original if PDF.
+    - images/slides: zip of slide thumbnails.
+    """
+    kind = (kind or "original").lower()
+    with Session(engine) as session:
+        p = session.get(Presentation, presentation_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Presentation not found")
+        # privacy gate
+        if getattr(p, "privacy", "public") == "private" and (not current_user or current_user.id != p.owner_id):
+            raise HTTPException(status_code=404, detail="Not found")
+        # download permission for non-owners
+        if kind != "slides" and kind != "images":
+            if not getattr(p, "allow_download", True) and (not current_user or current_user.id != p.owner_id):
+                raise HTTPException(status_code=403, detail="Downloads are disabled")
+
+        if kind in {"images", "slides"}:
+            thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
+            if not thumbs_dir.exists():
+                raise HTTPException(status_code=404, detail="Slides not available")
+            files = sorted(thumbs_dir.glob("slide_*.png"))
+            if not files:
+                raise HTTPException(status_code=404, detail="Slides not available")
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            tmp.close()
+            with zipfile.ZipFile(tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for f in files:
+                    zf.write(f, arcname=f.name)
+            # increment downloads
+            try:
+                p.downloads = int(getattr(p, "downloads", 0) or 0) + 1
+                session.add(p)
+                session.commit()
+            except Exception:
+                session.rollback()
+            return FileResponse(tmp.name, media_type="application/zip", filename=f"presentation_{presentation_id}_slides.zip")
+
+        if kind == "pdf":
+            pdf_path = None
+            if p.filename and p.filename.lower().endswith(".pdf"):
+                pdf_path = Path(UPLOAD_DIR) / p.filename
+            else:
+                job = session.exec(
+                    select(ConversionJob)
+                    .where(ConversionJob.presentation_id == presentation_id)
+                    .order_by(ConversionJob.created_at.desc())
+                ).first()
+                if job and job.result:
+                    cand = Path(UPLOAD_DIR) / job.result
+                    if cand.exists():
+                        pdf_path = cand
+            if not pdf_path or not pdf_path.exists():
+                raise HTTPException(status_code=404, detail="PDF not available")
+            try:
+                p.downloads = int(getattr(p, "downloads", 0) or 0) + 1
+                session.add(p)
+                session.commit()
+            except Exception:
+                session.rollback()
+            return FileResponse(str(pdf_path), media_type="application/pdf", filename=pdf_path.name)
+
+        # default: original
+        if not p.filename:
+            raise HTTPException(status_code=404, detail="File not found")
+        return RedirectResponse(url=f"/download/{p.filename}", status_code=302)
 
 
 @app.api_route("/download/{filename}", methods=["GET", "HEAD", "OPTIONS"])
@@ -6443,6 +8191,18 @@ def download_file(request: Request, filename: str, inline: bool = Query(False)):
         # For non-inline downloads, enforce the allow_download flag for non-owners.
         if not inline and not allow_dl and (not current_user or current_user.id != owner_id):
             raise HTTPException(status_code=403, detail="Downloads are disabled for this file")
+
+        # count downloads for non-inline requests
+        if not inline:
+            try:
+                with Session(engine) as _s:
+                    p_upd = _s.get(PresentationModel, pres.id)
+                    if p_upd:
+                        p_upd.downloads = int(getattr(p_upd, "downloads", 0) or 0) + 1
+                        _s.add(p_upd)
+                        _s.commit()
+            except Exception:
+                pass
 
     # Support HTTP Range requests for efficient video streaming
     range_header = request.headers.get("range")
@@ -6535,6 +8295,62 @@ def post_comment(
     )
 
 
+@app.post("/presentations/{presentation_id}/template")
+def use_as_template(
+    request: Request,
+    presentation_id: int,
+    csrf_token: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+):
+    validate_csrf(request, csrf_token)
+    with Session(engine) as session:
+        src = session.get(Presentation, presentation_id)
+        if not src:
+            raise HTTPException(status_code=404, detail="Presentation not found")
+        if not src.filename:
+            raise HTTPException(status_code=400, detail="Template is missing file")
+        # enforce privacy
+        if getattr(src, "privacy", "public") == "private" and src.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        ext = Path(src.filename).suffix.lower()
+        new_name = f"{uuid.uuid4().hex}{ext}"
+        src_path = Path(UPLOAD_DIR) / src.filename
+        dst_path = Path(UPLOAD_DIR) / new_name
+        if not src_path.exists():
+            raise HTTPException(status_code=404, detail="Source file missing")
+        shutil.copyfile(src_path, dst_path)
+
+        new_p = Presentation(
+            title=f"Copy of {src.title}",
+            description=src.description,
+            filename=new_name,
+            mimetype=src.mimetype,
+            owner_id=current_user.id,
+            privacy="public",
+            allow_download=True,
+            ai_title=src.ai_title,
+            ai_description=src.ai_description,
+            ai_summary=src.ai_summary,
+            category_id=getattr(src, "category_id", None),
+        )
+        session.add(new_p)
+        session.commit()
+        session.refresh(new_p)
+        new_p_id = new_p.id
+        # copy tags
+        try:
+            tag_links = session.exec(
+                select(PresentationTag).where(PresentationTag.presentation_id == src.id)
+            ).all()
+            for t in tag_links:
+                session.add(PresentationTag(presentation_id=new_p.id, tag_id=t.tag_id))
+            session.commit()
+        except Exception:
+            session.rollback()
+    return RedirectResponse(url=f"/presentations/{new_p_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @app.post("/presentations/{presentation_id}/delete")
 def delete_presentation(
     presentation_id: int,
@@ -6557,8 +8373,8 @@ def delete_presentation(
         original_path = Path(UPLOAD_DIR) / p.filename if getattr(p, "filename", None) else None
         thumbs_dir = Path(UPLOAD_DIR) / "thumbs" / str(presentation_id)
 
-        # Delete likes, bookmarks, comments
-        for model in (Like, Bookmark, Comment):
+        # Delete likes, bookmarks, comments, collections
+        for model in (Like, Bookmark, Comment, CollectionItem):
             rows = session.exec(
                 select(model).where(model.presentation_id == presentation_id)
             ).all()
@@ -6731,37 +8547,130 @@ def profile_view(
                     owner_site_role=getattr(owner, "site_role", None) if owner else None,
                     owner_email=getattr(owner, "email", None) if owner else None,
                     views=getattr(p, "views", None),
+                    downloads=getattr(p, "downloads", 0),
                     likes_count=likes_map.get(p.id, 0),
                     cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
                     category=SimpleNamespace(name=cat.name) if cat is not None else None,
                     created_at=getattr(p, "created_at", None),
                 )
             )
+
+        # liked presentations
+        liked_rows = session.exec(
+            select(Like.presentation_id).where(Like.user_id == user.id)
+        ).all()
+        liked_ids = [r[0] if isinstance(r, (list, tuple)) else r for r in liked_rows]
+        liked_presentations_raw = []
+        liked_presentations = []
+        likes_map_liked: dict[int, int] = {}
+        if liked_ids:
+            liked_presentations_raw = session.exec(
+                select(Presentation)
+                .where(Presentation.id.in_(list(liked_ids)))
+                .options(selectinload(Presentation.owner), selectinload(Presentation.category))
+                .order_by(Presentation.created_at.desc())
+            ).all()
+            liked_pres_ids = [p.id for p in liked_presentations_raw]
+            if liked_pres_ids:
+                rows_likes_liked = session.exec(
+                    select(Like.presentation_id, func.count(Like.id))
+                    .where(Like.presentation_id.in_(list(liked_pres_ids)))
+                    .group_by(Like.presentation_id)
+                ).all()
+                likes_map_liked = {int(r[0]): int(r[1]) for r in rows_likes_liked}
+
+        for p in liked_presentations_raw:
+            owner = getattr(p, "owner", None)
+            cat = getattr(p, "category", None)
+            liked_presentations.append(
+                SimpleNamespace(
+                    id=p.id,
+                    title=p.title,
+                    description=getattr(p, "description", None),
+                    filename=p.filename,
+                    mimetype=p.mimetype,
+                    owner_id=p.owner_id,
+                    owner_username=getattr(owner, "username", None) if owner else None,
+                    owner_site_role=getattr(owner, "site_role", None) if owner else None,
+                    owner_email=getattr(owner, "email", None) if owner else None,
+                    views=getattr(p, "views", None),
+                    downloads=getattr(p, "downloads", 0),
+                    likes_count=likes_map_liked.get(p.id, 0),
+                    cover_url=getattr(p, "cover_url", None) if hasattr(p, "cover_url") else None,
+                    category=SimpleNamespace(name=cat.name) if cat is not None else None,
+                    created_at=getattr(p, "created_at", None),
+                )
+            )
+
         followers = session.exec(
             select(Follow).where(Follow.following_id == user.id)
         ).all()
         following = session.exec(
             select(Follow).where(Follow.follower_id == user.id)
         ).all()
+        follower_ids = [f.follower_id for f in followers]
+        following_ids = [f.following_id for f in following]
+        follower_users = session.exec(select(User).where(User.id.in_(list(follower_ids)))).all() if follower_ids else []
+        following_users = session.exec(select(User).where(User.id.in_(list(following_ids)))).all() if following_ids else []
+        followers_list = [
+            SimpleNamespace(
+                id=u.id,
+                username=u.username,
+                full_name=u.full_name,
+                avatar=u.avatar,
+                site_role=u.site_role,
+            )
+            for u in follower_users
+        ]
+        following_list = [
+            SimpleNamespace(
+                id=u.id,
+                username=u.username,
+                full_name=u.full_name,
+                avatar=u.avatar,
+                site_role=u.site_role,
+            )
+            for u in following_users
+        ]
         follower_count = len(followers)
         following_count = len(following)
         owner_total_views = sum(getattr(p, 'views', 0) or 0 for p in presentations_raw)
+        owner_total_downloads = sum(getattr(p, 'downloads', 0) or 0 for p in presentations_raw)
         # whether current user follows this profile
         is_following = False
         cu = getattr(current_user, 'id', None)
         if current_user and cu:
             exists = session.exec(select(Follow).where((Follow.follower_id == cu) & (Follow.following_id == user.id))).first()
             is_following = bool(exists)
+        # collections (folders) for the profile owner only
+        collections = []
+        if current_user and cu and cu == user.id:
+            rows = session.exec(
+                select(Collection).where(Collection.user_id == user.id).order_by(Collection.created_at.desc())
+            ).all()
+            for c in rows:
+                count = session.exec(
+                    select(func.count(CollectionItem.id)).where(CollectionItem.collection_id == c.id)
+                ).one()
+                count_val = int(count[0]) if isinstance(count, (list, tuple)) else int(count)
+                collections.append(SimpleNamespace(id=c.id, name=c.name, count=count_val))
+        badges = _compute_creator_badges(getattr(user, "site_role", None), owner_total_views, owner_total_downloads, follower_count)
     return templates.TemplateResponse(
         "profile.html",
         {
             "request": request,
             "user_obj": user,
             "presentations": presentations,
+            "liked_presentations": liked_presentations,
+            "followers_list": followers_list,
+            "following_list": following_list,
+            "collections": collections,
             "follower_count": follower_count,
             "following_count": following_count,
             "owner_presentation_count": len(presentations),
             "owner_total_views": owner_total_views,
+            "owner_total_downloads": owner_total_downloads,
+            "badges": badges,
             "current_user": current_user,
             "is_following": is_following,
         },
@@ -6825,6 +8734,81 @@ def bookmarks_view(request: Request, current_user: User = Depends(get_current_us
     )
 
 
+@app.get("/api/collections")
+def list_collections(current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Collection).where(Collection.user_id == current_user.id).order_by(Collection.created_at.desc())
+        ).all()
+        data = []
+        for c in rows:
+            count = session.exec(
+                select(func.count(CollectionItem.id)).where(CollectionItem.collection_id == c.id)
+            ).one()
+            count_val = int(count[0]) if isinstance(count, (list, tuple)) else int(count)
+            data.append({"id": c.id, "name": c.name, "count": count_val})
+    return {"collections": data}
+
+
+@app.post("/api/collections")
+def create_collection(payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    with Session(engine) as session:
+        existing = session.exec(
+            select(Collection).where((Collection.user_id == current_user.id) & (Collection.name == name))
+        ).first()
+        if existing:
+            return {"id": existing.id, "name": existing.name}
+        c = Collection(user_id=current_user.id, name=name)
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+    return {"id": c.id, "name": c.name}
+
+
+@app.post("/api/collections/{collection_id}/items")
+def add_collection_item(collection_id: int, payload: dict = Body(...), current_user: User = Depends(get_current_user)):
+    presentation_id = payload.get("presentation_id")
+    if not presentation_id:
+        raise HTTPException(status_code=400, detail="presentation_id is required")
+    with Session(engine) as session:
+        c = session.get(Collection, collection_id)
+        if not c or c.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="collection not found")
+        exists = session.exec(
+            select(CollectionItem).where(
+                (CollectionItem.collection_id == collection_id)
+                & (CollectionItem.presentation_id == presentation_id)
+            )
+        ).first()
+        if exists:
+            return {"ok": True}
+        item = CollectionItem(collection_id=collection_id, presentation_id=presentation_id)
+        session.add(item)
+        session.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/collections/{collection_id}/items/{presentation_id}")
+def remove_collection_item(collection_id: int, presentation_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        c = session.get(Collection, collection_id)
+        if not c or c.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="collection not found")
+        item = session.exec(
+            select(CollectionItem).where(
+                (CollectionItem.collection_id == collection_id)
+                & (CollectionItem.presentation_id == presentation_id)
+            )
+        ).first()
+        if item:
+            session.delete(item)
+            session.commit()
+    return {"ok": True}
+
+
 @app.get("/categories", response_class=HTMLResponse)
 def categories_view(request: Request):
     """Show all categories in a styled grid. Reads a local JSON fallback, returns counts and paginates."""
@@ -6832,56 +8816,9 @@ def categories_view(request: Request):
     page = int(request.query_params.get('page', 1))
     per_page = int(request.query_params.get('per_page', 24))
 
-    # load DB categories (names)
-    db_cats = []
-    try:
-        with Session(engine) as session:
-            rows = session.exec(select(Category.id, Category.name)).all()
-            db_cats = [r[1] if isinstance(r, (list, tuple)) else r for r in rows]
-    except Exception:
-        db_cats = []
-
     # use cached counts (will compute on first call or after TTL)
     counts = get_category_counts()
-
-    # fallback built-in list (also read from data/categories.json if present)
-    builtin = []
-    try:
-        data_path = Path(__file__).parent.parent / 'data' / 'categories.json'
-        if data_path.exists():
-            with open(data_path, 'r', encoding='utf-8') as fh:
-                candidates = json.load(fh)
-                if isinstance(candidates, list):
-                    builtin = [str(x).strip() for x in candidates if x]
-    except Exception:
-        builtin = []
-
-    if not builtin:
-        builtin = [
-            'Business', 'Technology', 'Design', 'Marketing', 'Education', 'Science', 'Art', 'Finance',
-            'Health', 'Politics', 'Society', 'Travel', 'Sports', 'Programming', 'Machine Learning',
-            'Data Science', 'Startups', 'Product', 'Leadership', 'Psychology', 'History', 'Culture',
-            'Photography', 'Film', 'Music', 'Environment', 'Law', 'Economics', 'Mathematics', 'Philosophy'
-        ]
-
-    # merge lists, keep unique, prefer DB order
-    seen = set()
-    merged = []
-    for c in (db_cats + builtin):
-        if not c:
-            continue
-        key = c.strip()
-        lk = key.lower()
-        if lk in seen:
-            continue
-        seen.add(lk)
-        merged.append(key)
-
-    # Organize categories alphabetically for a consistent, tidy listing
-    try:
-        merged.sort(key=lambda s: s.lower())
-    except Exception:
-        pass
+    merged = get_available_category_names()
 
     # build enriched category objects with counts
     enriched = []
@@ -7011,7 +8948,7 @@ async def websocket_chat(websocket: WebSocket, other_id: int):
                 obj = json.loads(data)
             except Exception:
                 continue
-            # expected obj: { action: 'message', content: '...', to: <user_id> }
+            # expected obj: { action: 'message'|'typing'|'read', content: '...', to: <user_id> }
             if obj.get("action") == "message":
                 to_id = int(obj.get("to"))
                 content = obj.get("content", "")
@@ -7052,6 +8989,26 @@ async def websocket_chat(websocket: WebSocket, other_id: int):
                 await manager.send_personal(to_id, out)
                 # echo back to sender(s)
                 await manager.send_personal(me_id, out)
+            elif obj.get("action") == "typing":
+                to_id = int(obj.get("to"))
+                status = obj.get("status") or "start"
+                payload = {
+                    "type": "typing",
+                    "from": me_id,
+                    "to": to_id,
+                    "status": status,
+                }
+                await manager.send_personal(to_id, payload)
+            elif obj.get("action") == "read":
+                to_id = int(obj.get("to"))
+                msg_id = obj.get("message_id")
+                payload = {
+                    "type": "read",
+                    "from": me_id,
+                    "to": to_id,
+                    "message_id": msg_id,
+                }
+                await manager.send_personal(to_id, payload)
     except WebSocketDisconnect:
         pass
     finally:
@@ -7112,6 +9069,7 @@ def get_messages(other_id: int, current_user: User = Depends(get_current_user)):
                     "file": m.file_url,
                     "thumbnail": m.thumbnail_url,
                     "created_at": m.created_at.isoformat(),
+                    "read": bool(m.read),
                     "username": getattr(sender, "username", None) if sender else None,
                     "full_name": getattr(sender, "full_name", None) if sender else None,
                     "avatar": getattr(sender, "avatar", None) if sender else None,
@@ -7119,6 +9077,55 @@ def get_messages(other_id: int, current_user: User = Depends(get_current_user)):
                 }
             )
     return JSONResponse(out)
+
+
+@app.post('/api/messages/{other_id}/clear')
+def clear_messages(other_id: int, current_user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        stmt = delete(Message).where(
+            ((Message.sender_id == current_user.id) & (Message.recipient_id == other_id))
+            | ((Message.sender_id == other_id) & (Message.recipient_id == current_user.id))
+        )
+        session.exec(stmt)
+        session.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.post('/api/messages/{other_id}/read')
+def mark_messages_read(other_id: int, current_user: User = Depends(get_current_user)):
+    """Mark all messages from other_id -> current_user as read.
+
+    Returns the last read message id for read-receipt UI.
+    """
+    last_read_id = None
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Message)
+            .where(
+                (Message.sender_id == other_id)
+                & (Message.recipient_id == current_user.id)
+                & (Message.read == False)
+            )
+            .order_by(Message.created_at.asc())
+        ).all()
+        for m in rows:
+            m.read = True
+            session.add(m)
+            last_read_id = m.id
+        if rows:
+            session.commit()
+    if last_read_id:
+        try:
+            import asyncio
+            asyncio.create_task(manager.send_personal(other_id, {
+                "type": "read",
+                "from": current_user.id,
+                "to": other_id,
+                "message_id": last_read_id,
+            }))
+        except Exception:
+            pass
+    return JSONResponse({"ok": True, "last_read_id": last_read_id})
 
 
 @app.get('/api/online/{user_id}')
@@ -7173,6 +9180,69 @@ def classroom_chat_messages(classroom_id: int, current_user: User = Depends(get_
             sa = StudentAnalytics(
                 user_id=current_user.id,
                 classroom_id=classroom_id,
+                event_type="chat_view",
+                details=f"messages={len(messages)}",
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+    messages.reverse()
+    return JSONResponse({"messages": messages})
+
+
+@app.get('/api/spaces/{space_id}/chat/messages')
+def space_chat_messages(space_id: int, current_user: User = Depends(get_current_user)):
+    """Return recent space chat messages with sender metadata.
+
+    Only members (student/teacher/admin) of the space can access.
+    """
+    with Session(engine) as session:
+        space = session.get(Space, space_id)
+        if not space:
+            raise HTTPException(status_code=404, detail="Space not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this space")
+
+        rows = (
+            session.exec(
+                select(SpaceMessage, User)
+                .where(SpaceMessage.space_id == space_id)
+                .join(User, User.id == SpaceMessage.sender_id)
+                .order_by(SpaceMessage.created_at.desc())
+            )
+            .all()
+        )
+        messages = []
+        for msg, user in rows[:100]:
+            messages.append(
+                {
+                    "id": msg.id,
+                    "sender_id": msg.sender_id,
+                    "username": getattr(user, "username", None),
+                    "full_name": getattr(user, "full_name", None),
+                    "avatar": getattr(user, "avatar", None),
+                    "site_role": getattr(user, "site_role", None),
+                    "content": msg.content,
+                    "created_at": msg.created_at.isoformat(),
+                }
+            )
+
+        # analytics: record a chat view / last-seen marker for this space
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                space_id=space_id,
+                classroom_id=space_id,
                 event_type="chat_view",
                 details=f"messages={len(messages)}",
             )
@@ -7244,6 +9314,70 @@ def classroom_chat_post(
     return JSONResponse(out)
 
 
+@app.post('/api/spaces/{space_id}/chat/messages')
+def space_chat_post(
+    space_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Post a new space chat message for all members to see."""
+    content = (payload.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty message")
+
+    with Session(engine) as session:
+        space = session.get(Space, space_id)
+        if not space:
+            raise HTTPException(status_code=404, detail="Space not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this space")
+
+        msg = SpaceMessage(
+            space_id=space_id,
+            sender_id=current_user.id,
+            content=content,
+        )
+        session.add(msg)
+        session.commit()
+        session.refresh(msg)
+
+        out = {
+            "id": msg.id,
+            "sender_id": msg.sender_id,
+            "username": current_user.username,
+            "full_name": current_user.full_name,
+            "avatar": current_user.avatar,
+            "site_role": current_user.site_role,
+            "content": msg.content,
+            "created_at": msg.created_at.isoformat(),
+        }
+
+        # analytics: space chat message sent
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                space_id=space_id,
+                classroom_id=space_id,
+                event_type="chat_message",
+                details=f"message={msg.id}",
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    return JSONResponse(out)
+
+
 @app.post('/api/classrooms/{classroom_id}/chat/seen')
 def classroom_chat_seen(classroom_id: int, current_user: User = Depends(get_current_user)):
     """Mark classroom chat as seen for the current user.
@@ -7267,6 +9401,44 @@ def classroom_chat_seen(classroom_id: int, current_user: User = Depends(get_curr
             sa = StudentAnalytics(
                 user_id=current_user.id,
                 classroom_id=classroom_id,
+                event_type="chat_seen",
+                details=None,
+            )
+            session.add(sa)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    return JSONResponse({"ok": True})
+
+
+@app.post('/api/spaces/{space_id}/chat/seen')
+def space_chat_seen(space_id: int, current_user: User = Depends(get_current_user)):
+    """Mark space chat as seen for the current user.
+
+    This is used for per-user last-seen tracking and analytics.
+    """
+    with Session(engine) as session:
+        space = session.get(Space, space_id)
+        if not space:
+            raise HTTPException(status_code=404, detail="Space not found")
+        mem = session.exec(
+            select(Membership).where(
+                (Membership.user_id == current_user.id)
+                & (
+                    (Membership.space_id == space_id)
+                    | (Membership.classroom_id == space_id)
+                )
+            )
+        ).first()
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this space")
+
+        try:
+            sa = StudentAnalytics(
+                user_id=current_user.id,
+                space_id=space_id,
+                classroom_id=space_id,
                 event_type="chat_seen",
                 details=None,
             )
@@ -7900,12 +10072,14 @@ async def paystack_initialize(request: Request, current_user: User = Depends(get
     callback_url = str(request.url_for("paystack_callback"))
     metadata = {"user_id": current_user.id, "username": current_user.username}
     try:
-        init_res = await paystack_initialize_transaction(
+        init_res = paystack_initialize_transaction(
             email=email,
             amount_kobo=PAYSTACK_AMOUNT_KOBO,
             callback_url=callback_url,
             metadata=metadata,
         )
+        if asyncio.iscoroutine(init_res):
+            init_res = await init_res
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Paystack init failed: {e}")
 
@@ -7934,7 +10108,9 @@ async def paystack_initialize(request: Request, current_user: User = Depends(get
 @app.get("/paystack/callback")
 async def paystack_callback(reference: str = Query(...)):
     try:
-        verify_res = await paystack_verify_transaction(reference)
+        verify_res = paystack_verify_transaction(reference)
+        if asyncio.iscoroutine(verify_res):
+            verify_res = await verify_res
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Verification failed: {e}")
 
@@ -7968,7 +10144,7 @@ async def paystack_callback(reference: str = Query(...)):
                 if pres_id and owner_id:
                     a = Activity(user_id=user_id, verb="bought_presentation", target_id=pres_id)
                     session.add(a)
-            else:
+            elif action in (None, "", "premium_subscribe"):
                 # default behavior: treat as premium subscription
                 if user_id:
                     u = session.get(User, user_id)
@@ -7981,6 +10157,8 @@ async def paystack_callback(reference: str = Query(...)):
     # Redirect users to a sensible page after payment
     if action == "buy_presentation" and isinstance(metadata, dict) and metadata.get("presentation_id"):
         redirect_target = f"/presentations/{metadata.get('presentation_id')}"
+    elif action == "coffee_donation":
+        redirect_target = "/?coffee=success" if status_val == "success" else "/?coffee=failed"
     else:
         redirect_target = "/premium/dashboard" if status_val == "success" else "/premium/subscribe?error=Payment+failed"
 
@@ -8059,7 +10237,9 @@ async def buy_presentation(request: Request, presentation_id: int, current_user:
         email = current_user.email or f"user{current_user.id}@example.com"
         callback_url = str(request.url_for("paystack_callback"))
         metadata = {"user_id": current_user.id, "action": "buy_presentation", "presentation_id": presentation_id, "owner_id": p.owner_id}
-        init_res = await paystack_initialize_transaction(email=email, amount_kobo=PAYSTACK_AMOUNT_KOBO, callback_url=callback_url, metadata=metadata)
+        init_res = paystack_initialize_transaction(email=email, amount_kobo=PAYSTACK_AMOUNT_KOBO, callback_url=callback_url, metadata=metadata)
+        if asyncio.iscoroutine(init_res):
+            init_res = await init_res
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Paystack init failed: {e}")
 
@@ -8072,6 +10252,56 @@ async def buy_presentation(request: Request, presentation_id: int, current_user:
     # Record pending transaction
     with Session(engine) as session:
         tx = Transaction(order_id=reference, payer_id=email, amount=str(PAYSTACK_AMOUNT_KOBO / 100), currency=PAYSTACK_CURRENCY, status="initialized", user_id=current_user.id)
+        session.add(tx)
+        session.commit()
+
+    return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+
+
+@app.get("/support/coffee")
+async def support_coffee(request: Request):
+    if not PAYSTACK_PUBLIC_KEY:
+        return RedirectResponse(url="/?coffee_error=Payment+is+not+configured", status_code=status.HTTP_302_FOUND)
+
+    current_user = get_current_user_optional(request)
+    user_id = getattr(current_user, "id", None) if current_user else None
+    username = getattr(current_user, "username", None) if current_user else None
+    user_email = getattr(current_user, "email", None) if current_user else None
+    email = user_email or f"guest_{uuid.uuid4().hex[:10]}@247fileshare.app"
+    callback_url = str(request.url_for("paystack_callback"))
+    metadata = {"action": "coffee_donation"}
+    if user_id:
+        metadata["user_id"] = user_id
+    if username:
+        metadata["username"] = username
+
+    try:
+        init_res = paystack_initialize_transaction(
+            email=email,
+            amount_kobo=COFFEE_AMOUNT_KOBO,
+            callback_url=callback_url,
+            metadata=metadata,
+        )
+        if asyncio.iscoroutine(init_res):
+            init_res = await init_res
+    except Exception:
+        return RedirectResponse(url="/?coffee_error=Unable+to+start+payment", status_code=status.HTTP_302_FOUND)
+
+    data = init_res.get("data", {}) if isinstance(init_res, dict) else {}
+    auth_url = data.get("authorization_url")
+    reference = data.get("reference")
+    if not auth_url or not reference:
+        return RedirectResponse(url="/?coffee_error=Invalid+payment+response", status_code=status.HTTP_302_FOUND)
+
+    with Session(engine) as session:
+        tx = Transaction(
+            order_id=reference,
+            payer_id=email,
+            amount=str(COFFEE_AMOUNT_KOBO / 100),
+            currency=PAYSTACK_CURRENCY,
+            status="initialized",
+            user_id=user_id,
+        )
         session.add(tx)
         session.commit()
 

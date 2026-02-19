@@ -70,18 +70,18 @@
     {% endif %}
     {% for p in uploads %}
     {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
-    {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0' %}
+    {% set slide_thumb = '/media/thumbs/' ~ p.id ~ '/slide_0.png' %}
     {% set thumb_pdf = '/download/' ~ p.filename ~ '?inline=1#page=1&view=FitH&toolbar=0&navpanes=0' if is_pdf else None %}
-    {% set cover_or_pdf = p.cover_url or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
+    {% set cover_or_pdf = (p.cover_url|public_media_url) or thumb_pdf or request.url_for('static', path='slide-placeholder.svg') %}
     <div class="gallery-card">
       <div style="height:140px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(14,165,233,0.06), rgba(249,115,22,0.04));">
         {% if is_pdf %}
-        <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url or '' }}" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+        <div class="thumb-frame thumb-frame--pdf" data-pdf="{{ cover_or_pdf }}" data-cover="{{ p.cover_url|public_media_url or '' }}" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
           <canvas class="thumb-canvas" aria-label="{{ p.title }} preview"></canvas>
           <object data="{{ cover_or_pdf }}" data-thumb="{{ cover_or_pdf }}" type="application/pdf" class="thumb-object" aria-label="{{ p.title }} preview"></object>
         </div>
         {% else %}
-        <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url or '' }}" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" style="max-width:100%;max-height:100%;object-fit:cover;" />
+        <img src="{{ slide_thumb }}" alt="{{ p.title }}" data-cover="{{ p.cover_url|public_media_url or '' }}" data-fallback="/presentations/{{ p.id }}/slide/0" data-placeholder="{{ request.url_for('static', path='slide-placeholder.svg') }}" onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}" style="max-width:100%;max-height:100%;object-fit:cover;" />
         {% endif %}
       </div>
       <div class="gallery-meta">
@@ -91,7 +91,7 @@
           <div style="margin-top:6px; font-size:13px;">Saved: <span class="card__saved" data-id="{{ p.id }}">⭐ {{ p.bookmarks_count or 0 }}</span></div>
           {% if p.owner_username %}
           <div style="font-size:13px; margin-top:6px;">
-            by&nbsp;{% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a> <span class="role-badge role-badge--passerby">★</span>{% else %}Unknown{% endif %}
+            by&nbsp;{% if p.owner_username %}<a href="/users/{{ p.owner_username }}">{{ p.owner_username }}</a> <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span>{% else %}Unknown{% endif %}
           </div>
           {% endif %}
         </div>
@@ -142,7 +142,7 @@
             <p class="muted" style="margin:0;">Drag & drop or</p>
             <strong id="file-name">browse your computer</strong>
           </div>
-          <input id="file-input" name="file" type="file" accept=".pdf,.ppt,.pptx,.pptm" required aria-label="Select file to upload" />
+          <input id="file-input" name="file" type="file" accept=".pdf,.ppt,.pptx,.pptm,.mp4,.mov,.m4v,.webm" required aria-label="Select file to upload" />
         </div>
       </label>
     </div>

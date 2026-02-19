@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container content-card presentation-detail">
+<div class="container content-card presentation-detail presentation-viewer">
   <div class="presentation-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
     <div>
       <!-- owner summary shown before title -->
@@ -14,6 +14,13 @@
           <div style="line-height:1">
             <div style="font-weight:700">{{ p.owner_username or (p.author or 'Unknown') }} <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span></div>
             <div class="muted" style="font-size:12px">{{ owner_presentation_count or 0 }} presentations · {{ followers_count or 0 }} followers</div>
+            {% if creator_badges %}
+              <div class="creator-badges">
+                {% for b in creator_badges %}
+                  <span class="creator-badge">{{ b }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
           </div>
         </a>
       </div>
@@ -23,20 +30,27 @@
           This presentation is <strong>private</strong> · only you can see it.
         </div>
       {% endif %}
-      <p class="muted presentation-short-desc" style="margin-top:8px;">{{ p.description or '' }}</p>
+      <p class="muted presentation-short-desc" style="margin-top:8px;">{{ p.description or p.ai_description or '' }}</p>
       <p class="muted" style="margin-top:6px;">
         <strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations ·
         <strong id="view-count">{{ p.views or 0 }}</strong> views ·
+        <strong>{{ p.downloads or 0 }}</strong> downloads ·
         <strong>{{ likes or 0 }}</strong> likes
       </p>
     </div>
     <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if original_url %}
-          {% if current_user and current_user.id == p.owner_id %}
-            <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
-          {% elif p.allow_download %}
-            <a class="nav-link btn btn--download" href="{{ original_url }}" download title="Download this presentation">Download</a>
+          {% if current_user and current_user.id == p.owner_id or p.allow_download %}
+            <div class="download-menu" data-download-menu>
+              <button class="btn btn--download" type="button">Download ▾</button>
+              <div class="download-menu__panel">
+                <a href="/presentations/{{ p.id }}/download?kind=original">Original file</a>
+                <a href="/presentations/{{ p.id }}/download?kind=pdf">Download PDF</a>
+                <a href="/presentations/{{ p.id }}/download?kind=images">Download images</a>
+                <a href="/presentations/{{ p.id }}/download?kind=slides">Save slides only</a>
+              </div>
+            </div>
           {% endif %}
         {% endif %}
         {% if p.owner_id %}
@@ -44,8 +58,15 @@
           {% if current_user and current_user.username != p.owner_username %}
             <button class="btn btn--ghost follow-btn" data-username="{{ p.owner_username }}">{% if is_following %}Unfollow{% else %}Follow{% endif %}</button>
           {% endif %}
+          {% if current_user and current_user.id != p.owner_id %}
+            <form method="post" action="/presentations/{{ p.id }}/template" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <button class="btn btn--ghost" type="submit">Use as template</button>
+            </form>
+          {% endif %}
           {% if current_user and current_user.id == p.owner_id %}
           <form id="presentation-delete-form" method="post" action="/presentations/{{ p.id }}/delete" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <button id="presentation-delete-trigger" class="btn btn--ghost" type="button">Delete</button>
           </form>
           {% endif %}
@@ -90,9 +111,13 @@
   <!-- Primary actions row placed just before the slide viewer -->
   <div class="presentation-actions" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <button class="like-btn btn {% if is_liked %}liked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_liked else 'false' }}">👍 <span id="like-count">{{ likes or 0 }}</span></button>
+      <button class="like-btn btn like-btn--modern {% if is_liked %}liked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_liked else 'false' }}">
+        <span class="like-btn__label">Like</span>
+        <span id="like-count" class="like-btn__count">{{ likes or 0 }}</span>
+      </button>
       <button class="bookmark-btn btn {% if is_bookmarked %}bookmarked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_bookmarked else 'false' }}" title="Save for later">Save</button>
-      <a class="btn btn--ghost" href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.url_for('view_presentation', presentation_id=p.id) }}" target="_blank">Share</a>
+      <button class="btn btn--ghost" id="save-to-collection" data-presentation-id="{{ p.id }}">Save to folder</button>
+      <button class="btn btn--ghost btn-share" data-title="{{ p.title }}" data-id="{{ p.id }}" data-filename="{{ p.filename }}">Share</button>
       {% if p.music_url %}
         <button id="music-toggle-btn" class="btn btn--ghost" title="Show/hide presentation music">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -103,13 +128,34 @@
       {% if current_user %}
         <button id="ai-summary-btn" class="btn btn--primary" title="Summarize this presentation with AI">Summarize (AI)</button>
         <button id="ai-quiz-btn" class="btn btn--ghost" title="Generate quiz from this presentation">Generate Quiz</button>
-        <button id="ai-flash-btn" class="btn btn--ghost" title="Generate flashcards from this presentation">Flashcards</button>
-        <button id="ai-mind-btn" class="btn btn--ghost" title="Generate mind map from this presentation">Mind Map</button>
+        <button id="ai-flashcards-btn" class="btn btn--ghost" title="Generate flashcards from this presentation">Flashcards</button>
+        <button id="ai-mindmap-btn" class="btn btn--ghost" title="Generate a mind map from this presentation">Mind Map</button>
+        
+        <div class="ai-slide-dropdown" style="position:relative;display:inline-flex;">
+          <button id="ai-slide-btn" class="btn btn--ghost" title="Open AI assistant" aria-haspopup="true" aria-expanded="false">AI Assistant ▾</button>
+          <div id="ai-slide-menu" style="display:none;position:absolute;right:0;top:110%;min-width:220px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,0.12);padding:6px;z-index:1400;">
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="rephrase" style="width:100%;justify-content:flex-start;">Rephrase</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="simplify" style="width:100%;justify-content:flex-start;">Simplify</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="key_points" style="width:100%;justify-content:flex-start;">Key points</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="elaborate" style="width:100%;justify-content:flex-start;">Elaborate</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="adapt_for_audience" style="width:100%;justify-content:flex-start;">Adapt for audience</button>
+            <div style="height:1px;background:var(--border,#e5e7eb);margin:6px 4px;"></div>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="explain_like_12" style="width:100%;justify-content:flex-start;">Explain like I'm 12</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="real_world_example" style="width:100%;justify-content:flex-start;">Real-world example</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="analogy" style="width:100%;justify-content:flex-start;">Analogy</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="check_understanding" style="width:100%;justify-content:flex-start;">Check understanding</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="glossary" style="width:100%;justify-content:flex-start;">Key terms</button>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="custom" style="width:100%;justify-content:flex-start;">Custom instruction</button>
+            <div style="height:1px;background:var(--border,#e5e7eb);margin:6px 4px;"></div>
+            <button class="btn btn--ghost ai-menu-item" data-ai-action="open_chat" style="width:100%;justify-content:flex-start;">Open chat</button>
+          </div>
+        </div>
       {% else %}
         <button class="btn btn--primary" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Summarize (AI)</button>
         <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Generate Quiz</button>
         <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Flashcards</button>
         <button class="btn btn--ghost" title="Sign in to use AI features" onclick="location.href='/login?next=' + encodeURIComponent(window.location.pathname)">Mind Map</button>
+        
       {% endif %}
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
@@ -124,56 +170,63 @@
     </div>
   </div>
 
-  <!-- Two-column viewer: thumbnails left, large viewer right -->
-  <div class="presentation-layout" style="margin-top:18px">
-    <aside class="presentation-thumbs" id="presentation-thumbs" aria-label="Slides thumbnails">
-      <!-- thumbnails injected here -->
-    </aside>
-
-    <div style="display:flex;flex-direction:column;gap:8px;">
+  <!-- Two-column viewer: large viewer left, thumbnails right -->
+  <div class="presentation-layout presentation-layout--viewer" style="margin-top:18px;">
+    <div class="presentation-viewer-main-column main-slide-view">
       {# hidden anchors used by the JS fallback when no thumbnails are available #}
       <a id="viewer-download" href="{{ viewer_url or original_url or '#' }}" style="display:none;">Download</a>
       <a id="viewer-open-original" href="{{ original_url or '#' }}" style="display:none;">Open original</a>
 
-      <div class="viewer-toolbar" id="viewer-toolbar">
-        <div class="controls">
-          <button id="prev-page" class="viewer-nav-btn">◀ Prev</button>
-          <button id="next-page" class="viewer-nav-btn">Next ▶</button>
+      <div class="presentation-viewer-frame" id="presentation-viewer-frame">
+        <div class="presentation-viewer-topbar" aria-label="Presentation controls">
+          <div class="presentation-viewer-nav-group">
+            <button id="prev-page" type="button" class="viewer-nav-btn" aria-label="Previous slide" title="Previous slide">❮ Prev</button>
+            <button id="next-page" type="button" class="viewer-nav-btn" aria-label="Next slide" title="Next slide">Next ❯</button>
+            <div class="viewer-controls-spacer" aria-hidden="true"></div>
+            <div class="viewer-zoom-controls" aria-label="Zoom controls">
+              <button id="zoom-out" type="button" class="viewer-zoom-btn" title="Zoom out" aria-label="Zoom out">−</button>
+              <span id="zoom-level" class="viewer-zoom-level" aria-live="polite">100%</span>
+              <button id="zoom-in" type="button" class="viewer-zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
+            </div>
+            <button id="viewer-fullscreen" type="button" class="viewer-fullscreen-btn" aria-label="Enter fullscreen" title="Fullscreen">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="slide-counter" id="page-indicator" aria-live="polite">Slide 1 of 1</div>
         </div>
-        <div class="page-indicator" id="page-indicator">— / —</div>
-        <div class="controls">
-          <button id="zoom-out" class="viewer-nav-btn" title="Zoom out">−</button>
-          <button id="zoom-in" class="viewer-nav-btn" title="Zoom in">+</button>
-        </div>
-      </div>
 
-      <div class="presentation-main-viewer" id="presentation-main-viewer" role="region" aria-label="Slide viewer">
-        {# Render video uploads as native HTML5 video for best quality; fall back to PDF viewer or placeholder otherwise #}
+        <div class="presentation-main-viewer main-viewer" id="presentation-main-viewer" role="region" aria-label="Slide viewer">
+
+        {# Render video uploads as native HTML5 video for best quality; fall back to initial slide image #}
         {% if p.mimetype and p.mimetype.startswith('video') and original_url %}
           <video id="presentation-video" controls preload="metadata" playsinline style="width:100%;max-height:78vh;background:#000;display:block;">
             <source src="{{ original_url }}" type="{{ p.mimetype }}">
             Your browser does not support the video tag. <a href="{{ original_url }}">Download</a>
           </video>
-        {% elif viewer_url %}
-        <!-- When a viewer_url is available (original PDF or converted PDF), render it inline. -->
-        <object id="initial-viewer-object" data="{{ viewer_url }}" type="application/pdf" aria-label="Presentation preview" style="width:100%;height:480px;border:none;display:block;">
-          <iframe
-            id="initial-viewer-iframe"
-            src="{{ viewer_url }}"
-            style="width:100%;height:480px;border:none;"
-            loading="lazy"
-          ></iframe>
-        </object>
-        {% elif original_url %}
-        <div class="preview-message muted" id="viewer-placeholder">
-          No slide preview yet. <a href="{{ original_url }}" target="_blank">Open or download the original file</a>.
-        </div>
         {% else %}
-        <div class="preview-message muted" id="viewer-placeholder">No preview available for this file.</div>
+        <img
+          id="presentation-initial-image"
+          src="/media/thumbs/{{ p.id }}/slide_0.png"
+          alt="Slide preview"
+          style="width:100%;display:block;"
+          onerror="if(this.dataset.fallbackUsed!=='1'){this.dataset.fallbackUsed='1';this.src='/presentations/{{ p.id }}/slide/0';}else{var ph=document.getElementById('viewer-placeholder'); if(ph){ph.style.display='block';}}"
+        />
+        <div class="preview-message muted" id="viewer-placeholder" style="display:none;">
+          Loading preview… <a href="{{ original_url or viewer_url }}" target="_blank">Open original</a>.
+        </div>
         {% endif %}
+        </div>
       </div>
     </div>
+
+    <aside class="presentation-thumbs thumbnail-sidebar thumbnails-sidebar" id="presentation-thumbs" aria-label="Slides thumbnails">
+      <!-- thumbnails injected here -->
+    </aside>
   </div>
+
+        <!-- fullscreen behavior removed: viewer will display inline with the toolbar visible -->
 
   {# If conversion is queued for non-PDF uploads, show a clearer placeholder and
      ensure the client-side viewer knows to poll for thumbnails immediately. #}
@@ -193,27 +246,74 @@
     <h3 class="sr-only">About this presentation</h3>
     <div id="ai-summary-container" style="margin-top:12px;display:none;">
       <h4>AI Summary</h4>
-      <div id="ai-summary-content" class="muted" style="white-space:pre-wrap"></div>
+      <div id="ai-summary-content" class="muted" style="white-space:pre-wrap">{{ ai_summary or '' }}</div>
       <div id="ai-summary-status" class="muted" style="margin-top:6px"></div>
     </div>
-      <div id="ai-quiz-container" style="margin-top:12px;display:none;">
-        <h4>AI Quiz</h4>
-        <div id="ai-quiz-content" class="muted" style="white-space:pre-wrap"></div>
-        <div id="ai-quiz-status" class="muted" style="margin-top:6px"></div>
+    <div id="ai-quiz-container" style="margin-top:12px;display:none;">
+      <h4>AI Quiz</h4>
+      <div id="ai-quiz-content" class="muted" style="white-space:pre-wrap">{{ ai_quiz or '' }}</div>
+      <div id="ai-quiz-status" class="muted" style="margin-top:6px"></div>
+    </div>
+    <div id="ai-flashcards-container" style="margin-top:12px;display:none;">
+      <h4>AI Flashcards</h4>
+      <div id="ai-flashcards-content" class="muted" style="white-space:pre-wrap">{{ ai_flashcards or '' }}</div>
+      <div id="ai-flashcards-status" class="muted" style="margin-top:6px"></div>
+    </div>
+    <div id="ai-mindmap-container" style="margin-top:12px;display:none;">
+      <h4>AI Mind Map</h4>
+      <div id="ai-mindmap-content" class="muted" style="white-space:pre-wrap">{{ ai_mindmap or '' }}</div>
+      <div id="ai-mindmap-status" class="muted" style="margin-top:6px"></div>
+    </div>
+      <div id="ai-slide-container" class="ai-slide-container" aria-hidden="true">
+        <div class="ai-assistant-shell">
+          <div class="ai-slide-header">
+            <div class="ai-slide-title">
+              <span class="ai-slide-title-icon">✦</span>
+              <strong>AI Assistant</strong>
+            </div>
+            <div class="ai-slide-actions">
+              <button id="ai-slide-minimize" class="btn btn--ghost" title="Close chat" aria-label="Close assistant">✕</button>
+            </div>
+          </div>
+
+          <div id="ai-slide-chat" class="ai-slide-chat" aria-live="polite">
+            <!-- messages appended here -->
+          </div>
+
+          <div class="ai-slide-quick-actions" id="ai-slide-quick-actions">
+            <button type="button" class="ai-quick-btn" data-quick-action="explain">Explain deeper</button>
+            <button type="button" class="ai-quick-btn" data-quick-action="example">Give an example</button>
+            <button type="button" class="ai-quick-btn" data-quick-action="question">Ask me a question</button>
+          </div>
+
+          <div class="ai-slide-input-bar">
+            <div id="ai-slide-preview" class="ai-slide-preview" style="display:none;">
+              <img id="ai-slide-thumb" src="" alt="slide thumb" class="ai-slide-thumb" />
+            </div>
+            <input id="ai-slide-input" type="text" placeholder="Type your instruction…" class="ai-slide-input" />
+            <button id="ai-slide-send" class="btn ai-slide-send-btn" type="button">Send</button>
+          </div>
+        </div>
       </div>
-      <div id="ai-flash-container" style="margin-top:12px;display:none;">
-        <h4>Flashcards</h4>
-        <div id="ai-flash-content" class="muted" style="white-space:pre-wrap"></div>
-        <div id="ai-flash-status" class="muted" style="margin-top:6px"></div>
+  </div>
+
+  <div id="collection-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-panel">
+      <button class="modal-close" data-collection-close>✕</button>
+      <h3>Save to folder</h3>
+      <div class="collection-list" id="collection-list">
+        {% if collections %}
+          {% for c in collections %}
+            <button class="collection-item" data-collection-id="{{ c.id }}">{{ c.name }}</button>
+          {% endfor %}
+        {% else %}
+          <div class="muted">No folders yet.</div>
+        {% endif %}
       </div>
-      <div id="ai-mind-container" style="margin-top:12px;display:none;">
-        <h4>Mind Map</h4>
-        <div id="ai-mind-content" class="muted" style="white-space:pre-wrap"></div>
-        <div id="ai-mind-status" class="muted" style="margin-top:6px"></div>
+      <div class="collection-create">
+        <input id="collection-name" placeholder="New folder name" />
+        <button class="btn" id="collection-create-btn">Create</button>
       </div>
-    <div id="admin-preview-container" style="margin-top:12px;">
-      <h4>Generated Previews</h4>
-      <div id="admin-preview-list" class="muted">Loading previews…</div>
     </div>
   </div>
 
@@ -277,142 +377,234 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ request.url_for('static', path='js/presentation-viewer.js') }}?v=20260218w"></script>
+<style>
+  .container.content-card.presentation-detail.presentation-viewer {
+    width: 100% !important;
+    max-width: var(--max-width) !important;
+    margin: 0 auto !important;
+    min-height: 0 !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer {
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-viewer-main-column {
+    min-width: 0 !important;
+    display: block !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-viewer-frame {
+    width: 100% !important;
+    height: min(76vh, 920px) !important;
+    min-height: 560px !important;
+    max-height: calc(100vh - 140px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: scroll !important;
+    scrollbar-gutter: stable both-edges;
+    position: relative !important;
+    isolation: isolate !important;
+    scrollbar-width: auto !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer .presentation-zoom-stage {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    min-width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    position: relative !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer .slide-container {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    transform-origin: top center !important;
+    position: relative !important;
+    inset: auto !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer .slide-image {
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    display: block !important;
+  }
+
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer .pdf-page-item {
+    width: 100% !important;
+  }
+  .presentation-layout.presentation-layout--viewer .presentation-main-viewer.pdf-zoom-active .presentation-zoom-content {
+    transform: scale(var(--pdf-zoom-scale, 1)) !important;
+    transform-origin: top center !important;
+    transition: transform 0.2s ease !important;
+    will-change: transform !important;
+  }
+  body .container.content-card.presentation-detail.presentation-viewer #presentation-main-viewer.pdf-zoom-active .presentation-zoom-content {
+    transform: scale(var(--pdf-zoom-scale, 1)) !important;
+    transform-origin: top center !important;
+    transition: transform 0.2s ease !important;
+    will-change: transform !important;
+  }
+
+  .container.content-card.presentation-detail.presentation-viewer .presentation-main-viewer,
+  #presentation-main-viewer {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    overflow-y: scroll !important;
+    scrollbar-gutter: stable both-edges;
+    -ms-overflow-style: scrollbar;
+    scrollbar-width: auto !important;
+  }
+
+  #presentation-main-viewer::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  #presentation-main-viewer::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.08);
+  }
+
+  #presentation-main-viewer::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+  }
+
+  .container.content-card.presentation-detail.presentation-viewer .presentation-main-viewer > * {
+    max-width: none !important;
+    position: relative !important;
+    inset: auto !important;
+  }
+
+  #ai-slide-container .ai-assistant-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  #ai-slide-container .ai-slide-preview {
+    width: 100%;
+    max-height: 120px;
+    overflow: hidden;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    flex: 0 0 auto;
+  }
+
+  #ai-slide-container .ai-slide-preview img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    max-width: none;
+  }
+
+  #ai-slide-container .ai-slide-input-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    position: static;
+  }
+
+  #ai-slide-container .ai-slide-input {
+    width: 100%;
+  }
+
+  @media (max-width: 900px) {
+    .container.content-card.presentation-detail.presentation-viewer {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    .presentation-layout.presentation-layout--viewer {
+      min-height: 0 !important;
+    }
+
+    .presentation-layout.presentation-layout--viewer .presentation-viewer-frame {
+      height: min(68vh, 760px) !important;
+      min-height: 460px !important;
+    }
+
+    .presentation-layout.presentation-layout--viewer .presentation-main-viewer {
+      height: 100% !important;
+      min-height: 0 !important;
+    }
+
+    .presentation-layout.presentation-layout--viewer .presentation-main-viewer .slide-image {
+      max-height: none !important;
+    }
+  }
+</style>
 <script>
 // Global presentation metadata for this page
 const presentationId = "{{ p.id }}";
 const presentationFilename = "{{ p.filename or '' }}";
+const viewerUrl = "{{ viewer_url or '' }}";
 
-// Owner music controls: save/clear music URL and toggle visibility
+// Share modal controls (manual share + post-upload share)
 (function(){
-  const input = document.getElementById('presentation-music-input');
-  const saveBtn = document.getElementById('presentation-music-save');
-  const clearBtn = document.getElementById('presentation-music-clear');
-  const musicCard = document.getElementById('music-card');
-  const toggleBtn = document.getElementById('music-toggle-btn');
-  if (!input || !saveBtn) return;
-
-  async function updateMusic(url){
-    saveBtn.disabled = true;
-    try{
-      const res = await fetch(`/presentations/${presentationId}/music`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ music_url: url })
-      });
-      if (!res.ok){
-        let msg = 'Failed to save music.';
-        try{ const j = await res.json(); if(j && j.detail) msg = j.detail; }catch(e){}
-        alert(msg);
-        return;
-      }
-      // reload so server-rendered audio/iframe matches new URL
-      window.location.reload();
-    }catch(e){
-      alert('Network error while saving music.');
-    }finally{
-      saveBtn.disabled = false;
-    }
-  }
-
-  saveBtn.addEventListener('click', ()=>{
-    const url = (input.value || '').trim();
-    updateMusic(url);
-  });
-
-  if (clearBtn){
-    clearBtn.addEventListener('click', ()=>{
-      input.value = '';
-      updateMusic('');
-    });
-  }
-
-  if (toggleBtn && musicCard){
-    toggleBtn.addEventListener('click', ()=>{
-      const visible = musicCard.style.display !== 'none';
-      musicCard.style.display = visible ? 'none' : 'block';
-    });
-  }
-})();
-
-// Delete confirmation modal for presentation delete
-(function(){
-  const trigger = document.getElementById('presentation-delete-trigger');
-  const form = document.getElementById('presentation-delete-form');
-  if (!trigger || !form) return;
-
-  let modal = document.getElementById('presentation-delete-modal');
-  if (!modal){
-    modal = document.createElement('div');
-    modal.id = 'presentation-delete-modal';
-    modal.className = 'chat-modal';
-    modal.style.display = 'none';
-    modal.innerHTML = `
-      <div class="chat-modal__backdrop"></div>
-      <div class="chat-modal__panel" style="max-width:420px;">
-        <header class="chat-header">
-          <div class="chat-header__title">Delete presentation</div>
-          <button type="button" id="presentation-delete-cancel" class="icon-btn">✕</button>
-        </header>
-        <div style="padding:16px;">
-          <p class="muted">This action will permanently delete this presentation and its data. This cannot be undone.</p>
-          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
-            <button type="button" id="presentation-delete-cancel-2" class="btn btn--ghost">Cancel</button>
-            <button type="button" id="presentation-delete-confirm" class="btn btn--danger">Delete permanently</button>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-  }
-
-  function openModal(){ modal.style.display = 'flex'; }
-  function closeModal(){ modal.style.display = 'none'; }
-
-  trigger.addEventListener('click', function(e){ e.preventDefault(); openModal(); });
-
-  modal.addEventListener('click', function(e){
-    if (e.target.classList.contains('chat-modal__backdrop')) closeModal();
-  });
-
-  modal.querySelector('#presentation-delete-cancel')?.addEventListener('click', function(){ closeModal(); });
-  modal.querySelector('#presentation-delete-cancel-2')?.addEventListener('click', function(){ closeModal(); });
-  modal.querySelector('#presentation-delete-confirm')?.addEventListener('click', function(){ form.submit(); });
-})();
-
-// Post-upload share popup: show once when just_uploaded=1 is present in the URL
-(function(){
-  const params = new URLSearchParams(window.location.search || '');
-  if (!params.get('just_uploaded')) return;
-
   const modal = document.getElementById('upload-share-modal');
   if (!modal) return;
 
+  const shareBtn = document.querySelector('.btn-share');
   const backdrop = modal.querySelector('.chat-modal__backdrop');
   const closeButtons = modal.querySelectorAll('[data-close-share]');
   const fb = modal.querySelector('[data-share="facebook"]');
   const x = modal.querySelector('[data-share="x"]');
   const li = modal.querySelector('[data-share="linkedin"]');
   const copyBtn = modal.querySelector('[data-copy-link]');
+  const params = new URLSearchParams(window.location.search);
+  const justUploaded = params.get('just_uploaded') === '1';
 
   const baseUrl = window.location.origin + window.location.pathname;
 
-  if (fb){
+  if (fb) {
     fb.href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(baseUrl);
   }
-  if (x){
+  if (x) {
     const text = 'Check out my new presentation on 247FileShare';
     x.href = 'https://twitter.com/intent/tweet?url=' + encodeURIComponent(baseUrl) + '&text=' + encodeURIComponent(text);
   }
-  if (li){
+  if (li) {
     li.href = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(baseUrl);
   }
 
   function closeShare(){ modal.style.display = 'none'; }
   function openShare(){ modal.style.display = 'flex'; }
 
+  if (shareBtn) {
+    shareBtn.addEventListener('click', function(){ openShare(); });
+  }
   closeButtons.forEach(function(btn){
     btn.addEventListener('click', function(){ closeShare(); });
   });
-  if (backdrop){
+  if (backdrop) {
     backdrop.addEventListener('click', function(ev){
       if (ev.target === backdrop) closeShare();
     });
@@ -431,15 +623,15 @@ const presentationFilename = "{{ p.filename or '' }}";
     });
   }
 
-  // Clean the query string so refreshes don't re-open the modal
-  try{
-    params.delete('just_uploaded');
-    const newQs = params.toString();
-    const newUrl = window.location.pathname + (newQs ? '?' + newQs : '') + window.location.hash;
-    window.history.replaceState(null, '', newUrl);
-  }catch(e){ /* ignore */ }
-
-  openShare();
+  if (justUploaded) {
+    try{
+      params.delete('just_uploaded');
+      const newQs = params.toString();
+      const newUrl = window.location.pathname + (newQs ? '?' + newQs : '') + window.location.hash;
+      window.history.replaceState(null, '', newUrl);
+    }catch(e){ /* ignore */ }
+    openShare();
+  }
 })();
 
 // Shared AI poller helper used by summary/quiz/flashcards/mindmap
@@ -454,7 +646,11 @@ function makePoller(taskType, contentEl, statusEl){
           const j = await r.json();
           const res = j.results && j.results.find(x=>x.task_type === taskType && x.result);
           if(res){
-            contentEl.textContent = res.result;
+            if(window.renderAiMarkdown){
+              contentEl.innerHTML = window.renderAiMarkdown(res.result || '');
+            } else {
+              contentEl.textContent = res.result;
+            }
             statusEl.textContent = '';
             (contentEl.parentElement || contentEl).style.display = '';
             return true;
@@ -468,236 +664,47 @@ function makePoller(taskType, contentEl, statusEl){
   }
 }
 
-// Viewer script: fetch thumbnails and render thumbnails + main viewer with navigation
+// Client-side AI fallback used for optimistic suggestions and when backend is unavailable
+function localAiTransform(action, text, audience){
+  try{
+    if(!text) return '';
+    const sents = text.split(/(?<=[\.\!\?])\s+/).map(s=>s.trim()).filter(Boolean);
+    if(action === 'rephrase'){
+      return sents.reverse().join(' ') + '\n\n[Rephrased — local fallback]';
+    }
+    if(action === 'simplify'){
+      return sents.map(s => s.length > 120 ? s.slice(0, 117) + '…' : s).join(' ') + '\n\n[Simplified — local fallback]';
+    }
+    if(action === 'key_points'){
+      const bullets = [];
+      for(const s of sents){
+        if(bullets.length >= 6) break;
+        bullets.push('- ' + (s.length > 220 ? s.slice(0, 217) + '…' : s));
+      }
+      return bullets.join('\n') || text;
+    }
+    if(action === 'elaborate'){
+      return text + '\n\n[Elaboration not available — local fallback]';
+    }
+    if(action === 'adapt_for_audience'){
+      return `Adapted for ${audience || 'the requested audience'}:\n\n` + text;
+    }
+    return text;
+  }catch(e){ return text; }
+}
+
+// Presentation viewer initialization (external class)
 (function(){
-  const thumbsEl = document.getElementById('presentation-thumbs');
-  const mainEl = document.getElementById('presentation-main-viewer');
-  const placeholder = document.getElementById('viewer-placeholder');
-  const pageIndicator = document.getElementById('page-indicator');
-  const prevBtn = document.getElementById('prev-page');
-  const nextBtn = document.getElementById('next-page');
-  // older markup used dedicated download/open buttons; we now fall back
-  // to the main Download button in the header when needed.
-  const zoomInBtn = document.getElementById('zoom-in');
-  const zoomOutBtn = document.getElementById('zoom-out');
-
-  // if core elements are missing, skip viewer initialization to avoid JS errors
-  if (!thumbsEl || !mainEl || !pageIndicator || !prevBtn || !nextBtn) return;
-
-  // Keep the inline PDF iframe only for true PDF uploads. For converted
-  // PPT/PPTX, we prefer the image-based slide viewer so users always see
-  // content even if their browser cannot render PDFs inline.
-  const iframe = document.getElementById('initial-viewer-iframe');
-  let hasIframe = false;
-  try {
-    const fname = (presentationFilename || '').toLowerCase();
-    if (fname.endsWith('.pdf') && iframe) {
-      hasIframe = true;
-    }
-  } catch (e) {}
-
-  let thumbnails = [];
-  let currentIndex = 0;
-  let zoom = 1;
-  let currentImg = null;
-  let autoConvertTried = false;
-
-  function setIndicator() {
-    pageIndicator.textContent = (thumbnails.length ? (currentIndex+1) : '—') + ' / ' + (thumbnails.length || '—');
-    prevBtn.disabled = currentIndex <= 0;
-    nextBtn.disabled = currentIndex >= (thumbnails.length-1);
+  if(!window.PresentationViewer){
+    console.error('[presentation-viewer] script not loaded');
+    return;
   }
-
-  function applyZoom(delta) {
-    if (typeof delta === 'number') {
-      zoom = Math.max(0.5, Math.min(4, zoom + delta));
-    }
-    if (currentImg) {
-      currentImg.style.maxWidth = 'none';
-      currentImg.style.width = (zoom * 100) + '%';
-      mainEl.style.overflow = zoom > 1 ? 'auto' : 'hidden';
-    }
-  }
-
-  async function autoConvertAndLoad(){
-    if (placeholder) {
-      placeholder.textContent = 'Generating previews…';
-      placeholder.style.display = '';
-    }
-    try{
-      const r = await fetch(`/api/presentations/${presentationId}/convert`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!r.ok){
-        renderFallback();
-        return;
-      }
-      const start = Date.now();
-      const timeoutMs = 60000;
-      while (Date.now() - start < timeoutMs){
-        try{
-          const t = await fetch(`/presentations/${presentationId}/thumbnails`, { credentials: 'include' });
-          if (t.ok){
-            const tj = await t.json();
-            if (tj.thumbnails && tj.thumbnails.length){
-              thumbnails = tj.thumbnails;
-              renderThumbs();
-              await showPage(0);
-              if (placeholder) placeholder.style.display = 'none';
-              return;
-            }
-          }
-        }catch(e){}
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      renderFallback();
-    }catch(e){
-      console.warn('auto convert failed', e);
-      renderFallback();
-    }
-  }
-
-  async function fetchThumbnails(){
-    try{
-      const res = await fetch(`/presentations/${presentationId}/thumbnails`);
-      if (!res.ok) throw new Error('no thumbs');
-      const data = await res.json();
-      thumbnails = data.thumbnails || [];
-      if (thumbnails.length) {
-        renderThumbs();
-        showPage(0);
-      } else if (data.status === 'queued') {
-        await pollThumbnails();
-      } else if (!autoConvertTried){
-        autoConvertTried = true;
-        await autoConvertAndLoad();
-      }
-      
-    }catch(e){
-      console.warn('thumbnails fetch failed', e);
-      if (!autoConvertTried){
-        autoConvertTried = true;
-        await autoConvertAndLoad();
-      } else {
-        renderFallback();
-      }
-    }
-  }
-
-  function renderThumbs(){
-    thumbsEl.innerHTML = '';
-    thumbnails.forEach((u,i)=>{
-      const wrap = document.createElement('div');
-      wrap.className = 'presentation-thumb-wrap';
-      wrap.style.marginBottom = '10px';
-
-      const img = document.createElement('img');
-      img.className = 'presentation-thumb';
-      img.src = u;
-      img.alt = 'Page '+(i+1);
-      img.dataset.index = i;
-      img.loading = 'lazy';
-      img.addEventListener('click', ()=> showPage(i));
-
-      const badge = document.createElement('div');
-      badge.className = 'presentation-thumb__badge';
-      badge.textContent = (i+1)+' / '+thumbnails.length;
-
-      wrap.appendChild(img);
-      wrap.appendChild(badge);
-      thumbsEl.appendChild(wrap);
-    });
-  }
-
-  function renderFallback(){
-    thumbsEl.innerHTML = '';
-    mainEl.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.flexDirection = 'column';
-    wrap.style.alignItems = 'center';
-    wrap.style.justifyContent = 'center';
-    wrap.style.minHeight = '240px';
-
-    const msg = document.createElement('div');
-    msg.className = 'muted';
-    msg.style.marginBottom = '8px';
-    msg.textContent = 'No slide previews yet. Use "Generate Previews" above, or open the original file.';
-    wrap.appendChild(msg);
-
-    const link = document.createElement('a');
-    link.className = 'btn';
-    // try reuse the existing header download button if present
-    const headerDownload = document.querySelector('.btn--download');
-    link.href = headerDownload && headerDownload.getAttribute('href') ? headerDownload.getAttribute('href') : '#';
-    link.textContent = headerDownload ? 'Download / Open original' : 'No file available';
-    link.target = '_blank';
-    wrap.appendChild(link);
-
-    mainEl.appendChild(wrap);
-    pageIndicator.textContent = '— / —';
-  }
-
-  async function showPage(index){
-    if (!thumbnails[index]) return;
-    currentIndex = index;
-    // update active thumb
-    thumbsEl.querySelectorAll('.presentation-thumb').forEach(el=>el.classList.remove('active'));
-    const el = thumbsEl.querySelector('.presentation-thumb[data-index="'+index+'"]');
-    if (el) el.classList.add('active');
-
-    // Always prefer the image-based slide viewer so content is
-    // readable regardless of the browser's PDF plugin behavior.
-    mainEl.innerHTML = '';
-    const img = document.createElement('img');
-    img.src = thumbnails[index];
-    img.alt = 'Page '+(index+1);
-    img.style.display = 'block';
-    currentImg = img;
-    mainEl.appendChild(img);
-    applyZoom(0);
-    setIndicator();
-  }
-
-  async function pollThumbnails(){
-    const start = Date.now();
-    const timeoutMs = 60000; // 60s
-    if (placeholder) {
-      placeholder.textContent = 'Generating previews…';
-    }
-    while(Date.now() - start < timeoutMs){
-      try{
-        const t = await fetch(`/presentations/${presentationId}/thumbnails`, { credentials: 'include' });
-        if(t.ok){
-          const tj = await t.json();
-          if(tj.thumbnails && tj.thumbnails.length){
-            thumbnails = tj.thumbnails;
-            renderThumbs();
-            showPage(0);
-            return;
-          }
-        }
-      }catch(e){}
-      await new Promise(r=>setTimeout(r, 2000));
-    }
-    // timed out waiting; fall back to simple download link
-    renderFallback();
-  }
-
-  prevBtn.addEventListener('click', ()=> { if (currentIndex>0) showPage(currentIndex-1); });
-  nextBtn.addEventListener('click', ()=> { if (currentIndex < thumbnails.length-1) showPage(currentIndex+1); });
-  if (zoomInBtn) {
-    zoomInBtn.addEventListener('click', ()=> applyZoom(0.25));
-  }
-  if (zoomOutBtn) {
-    zoomOutBtn.addEventListener('click', ()=> applyZoom(-0.25));
-  }
-  window.addEventListener('keydown',(e)=>{ if (e.key === 'ArrowLeft') { if (currentIndex>0) showPage(currentIndex-1); } else if (e.key === 'ArrowRight') { if (currentIndex < thumbnails.length-1) showPage(currentIndex+1); }});
-
-  // initialize
-  fetchThumbnails();
+  const viewer = new window.PresentationViewer({
+    presentationId,
+    presentationFilename,
+    viewerUrl,
+  });
+  viewer.init();
 })();
 // AI summary button: enqueue and poll for results
 (function(){
@@ -706,6 +713,11 @@ function makePoller(taskType, contentEl, statusEl){
   const content = document.getElementById('ai-summary-content');
   const status = document.getElementById('ai-summary-status');
   if(!btn) return;
+  try{
+    if(content && window.renderAiMarkdown && content.textContent){
+      content.innerHTML = window.renderAiMarkdown(content.textContent);
+    }
+  }catch(e){}
   const summaryPoll = makePoller('summary', content, status);
   btn.addEventListener('click', async ()=>{
     btn.disabled = true;
@@ -738,14 +750,16 @@ function makePoller(taskType, contentEl, statusEl){
   const qcont = document.getElementById('ai-quiz-container');
   const qcontent = document.getElementById('ai-quiz-content');
   const qstatus = document.getElementById('ai-quiz-status');
-  const fbtn = document.getElementById('ai-flash-btn');
-  const fcont = document.getElementById('ai-flash-container');
-  const fcontent = document.getElementById('ai-flash-content');
-  const fstatus = document.getElementById('ai-flash-status');
-  const mbtn = document.getElementById('ai-mind-btn');
-  const mcont = document.getElementById('ai-mind-container');
-  const mcontent = document.getElementById('ai-mind-content');
-  const mstatus = document.getElementById('ai-mind-status');
+
+  const fbtn = document.getElementById('ai-flashcards-btn');
+  const fcont = document.getElementById('ai-flashcards-container');
+  const fcontent = document.getElementById('ai-flashcards-content');
+  const fstatus = document.getElementById('ai-flashcards-status');
+
+  const mbtn = document.getElementById('ai-mindmap-btn');
+  const mcont = document.getElementById('ai-mindmap-container');
+  const mcontent = document.getElementById('ai-mindmap-content');
+  const mstatus = document.getElementById('ai-mindmap-status');
 
   if(qbtn){
     const poll = makePoller('quiz', qcontent, qstatus);
@@ -762,107 +776,15 @@ function makePoller(taskType, contentEl, statusEl){
   }
 
   if(fbtn){
-    async function renderFlashcards(raw){
-      fcontent.innerHTML = '';
-      const text = (raw || '').trim();
-      if (!text){
-        fcontent.textContent = 'No flashcards available.';
-        return;
-      }
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (!lines.length){
-        fcontent.textContent = text;
-        return;
-      }
-
-      const wrap = document.createElement('div');
-      wrap.style.display = 'flex';
-      wrap.style.flexWrap = 'wrap';
-      wrap.style.gap = '8px';
-
-      lines.forEach(line => {
-        let front = line;
-        let back = '';
-        const idx = line.indexOf(':');
-        if (idx !== -1){
-          front = line.slice(0, idx).trim();
-          back = line.slice(idx + 1).trim();
-        }
-
-        const card = document.createElement('div');
-        card.className = 'flashcard';
-        card.style.border = '1px solid var(--border, #e5e7eb)';
-        card.style.borderRadius = '8px';
-        card.style.padding = '10px 12px';
-        card.style.minWidth = '180px';
-        card.style.maxWidth = '260px';
-        card.style.cursor = back ? 'pointer' : 'default';
-        card.style.background = 'var(--card-bg, #ffffff)';
-
-        const frontEl = document.createElement('div');
-        frontEl.style.fontWeight = '600';
-        frontEl.style.marginBottom = back ? '6px' : '0';
-        frontEl.textContent = front || line;
-
-        const backEl = document.createElement('div');
-        backEl.textContent = back;
-        backEl.style.fontSize = '13px';
-        backEl.style.display = back ? 'none' : 'block';
-        backEl.style.color = 'var(--muted, #4b5563)';
-
-        if (back){
-          const hint = document.createElement('div');
-          hint.textContent = 'Tap to reveal answer';
-          hint.className = 'muted';
-          hint.style.fontSize = '11px';
-          hint.style.marginTop = '4px';
-          card.appendChild(hint);
-
-          card.addEventListener('click', () => {
-            const isHidden = backEl.style.display === 'none';
-            backEl.style.display = isHidden ? 'block' : 'none';
-            hint.textContent = isHidden ? 'Tap to hide answer' : 'Tap to reveal answer';
-          });
-        }
-
-        card.insertBefore(frontEl, card.firstChild);
-        card.appendChild(backEl);
-        wrap.appendChild(card);
-      });
-
-      fcontent.appendChild(wrap);
-    }
-
-    async function pollFlashcards(){
-      fstatus.textContent = 'Waiting for flashcards…';
-      const start = Date.now();
-      while (Date.now() - start < 120000){
-        try{
-          const r = await fetch(`/api/presentations/${presentationId}/ai/results`, { credentials: 'include', headers: { 'Accept': 'application/json' } });
-          if (r.ok){
-            const j = await r.json();
-            const res = j.results && j.results.find(x => x.task_type === 'flashcards' && x.result);
-            if (res){
-              await renderFlashcards(res.result);
-              fstatus.textContent = '';
-              return true;
-            }
-          }
-        }catch(e){ }
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      fstatus.textContent = 'Timed out waiting for flashcards.';
-      return false;
-    }
-
+    const poll = makePoller('flashcards', fcontent, fstatus);
     fbtn.addEventListener('click', async ()=>{
       fbtn.disabled = true; fbtn.textContent = 'Queued…'; fcont.style.display = '';
       fcontent.textContent = ''; fstatus.textContent = 'Requesting flashcards…';
       try{
         const r = await fetch(`/api/presentations/${presentationId}/ai/flashcards`, { method: 'POST', credentials: 'include' });
         if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; fstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
-        await pollFlashcards();
-      }catch(e){ fstatus.textContent = 'Failed to request flashcards.' }
+        await poll();
+      }catch(e){ fstatus.textContent = 'Failed to request AI flashcards.' }
       fbtn.disabled = false; fbtn.textContent = 'Flashcards';
     });
   }
@@ -876,11 +798,446 @@ function makePoller(taskType, contentEl, statusEl){
         const r = await fetch(`/api/presentations/${presentationId}/ai/mindmap`, { method: 'POST', credentials: 'include' });
         if(!r.ok){ let txt=''; try{ txt = await r.text(); }catch(e){}; mstatus.textContent = `Request failed: ${r.status} ${txt}`; throw new Error('enqueue failed'); }
         await poll();
-      }catch(e){ mstatus.textContent = 'Failed to request mind map.' }
+      }catch(e){ mstatus.textContent = 'Failed to request AI mind map.' }
       mbtn.disabled = false; mbtn.textContent = 'Mind Map';
     });
   }
 })();
+  // AI Slide assistant: chat-style side panel
+  (function(){
+      const openBtn = document.getElementById('ai-slide-btn');
+      const panel = document.getElementById('ai-slide-container');
+      const panelHeader = panel ? panel.querySelector('.ai-slide-header') : null;
+      const menu = document.getElementById('ai-slide-menu');
+      const messagesEl = document.getElementById('ai-slide-chat');
+      const input = document.getElementById('ai-slide-input');
+      const quickActionsEl = document.getElementById('ai-slide-quick-actions');
+      const sendBtn = document.getElementById('ai-slide-send');
+      const closeBtn = document.getElementById('ai-slide-minimize');
+      const chatHistory = [];
+      const maxHistory = 8;
+      const dragState = {
+        active: false,
+        offsetX: 0,
+        offsetY: 0,
+      };
+
+      if(!openBtn || !panel) return;
+
+      function canDragDesktop(){
+        return window.matchMedia('(min-width: 901px)').matches;
+      }
+
+      function resetPanelPositionForMobile(){
+        if(canDragDesktop()) return;
+        panel.style.left = '';
+        panel.style.top = '';
+        panel.style.right = '';
+        panel.style.bottom = '';
+      }
+
+      function scrollToBottom(opts){
+        if(!messagesEl) return;
+        const behavior = (opts && opts.smooth) ? 'smooth' : 'auto';
+        try{
+          // Ensure DOM has painted before scrolling (important for long replies + suggestions)
+          requestAnimationFrame(()=>{
+            requestAnimationFrame(()=>{
+              try{ messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior }); }
+              catch(e){ messagesEl.scrollTop = messagesEl.scrollHeight; }
+            });
+          });
+        }catch(e){
+          try{ messagesEl.scrollTop = messagesEl.scrollHeight; }catch(e2){}
+        }
+      }
+
+      function appendMessage(who, text){
+        if(!messagesEl) return null;
+        const wrap = document.createElement('div');
+        wrap.className = `ai-chat-row ${who === 'user' ? 'ai-chat-row--user' : 'ai-chat-row--assistant'}`;
+        const bubble = document.createElement('div');
+        bubble.className = `ai-chat-bubble ${who === 'user' ? 'ai-chat-bubble--user' : 'ai-chat-bubble--assistant'}`;
+        if(who !== 'user' && window.renderAiMarkdown){
+          bubble.innerHTML = window.renderAiMarkdown(text || '');
+        } else {
+          bubble.textContent = text;
+        }
+        wrap.appendChild(bubble);
+        messagesEl.appendChild(wrap);
+        scrollToBottom({ smooth: true });
+        return bubble;
+      }
+
+      function showPanel(){
+        panel.style.display = 'flex';
+        requestAnimationFrame(()=> panel.classList.add('is-open'));
+        panel.setAttribute('aria-hidden', 'false');
+        if(input) input.focus();
+        scrollToBottom({ smooth: false });
+      }
+      function hidePanel(){
+        panel.classList.remove('is-open');
+        panel.setAttribute('aria-hidden', 'true');
+        try{
+          if(messagesEl) messagesEl.innerHTML = '';
+          if(input) input.value = '';
+          chatHistory.length = 0;
+          const previewWrap = document.getElementById('ai-slide-preview');
+          const thumbImg = document.getElementById('ai-slide-thumb');
+          if(thumbImg){
+            thumbImg.src = '';
+            thumbImg.style.display = 'none';
+          }
+          if(previewWrap) previewWrap.style.display = 'none';
+        }catch(e){}
+        setTimeout(()=>{ if(!panel.classList.contains('is-open')) panel.style.display = 'none'; }, 180);
+      }
+
+      function clamp(value, min, max){
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function onDragMove(e){
+        if(!dragState.active || !canDragDesktop()) return;
+        const width = panel.offsetWidth || 380;
+        const height = panel.offsetHeight || 600;
+        const maxLeft = Math.max(8, window.innerWidth - width - 8);
+        const maxTop = Math.max(8, window.innerHeight - height - 8);
+        const nextLeft = clamp(e.clientX - dragState.offsetX, 8, maxLeft);
+        const nextTop = clamp(e.clientY - dragState.offsetY, 8, maxTop);
+        panel.style.left = `${nextLeft}px`;
+        panel.style.top = `${nextTop}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+      }
+
+      function endDrag(){
+        if(!dragState.active) return;
+        dragState.active = false;
+        panel.classList.remove('is-dragging');
+      }
+
+      if(panelHeader){
+        panelHeader.addEventListener('pointerdown', (e)=>{
+          if(!canDragDesktop()) return;
+          if(e.target && e.target.closest('#ai-slide-minimize')) return;
+          const rect = panel.getBoundingClientRect();
+          dragState.active = true;
+          dragState.offsetX = e.clientX - rect.left;
+          dragState.offsetY = e.clientY - rect.top;
+          panel.classList.add('is-dragging');
+          try{ panelHeader.setPointerCapture(e.pointerId); }catch(_){ }
+          e.preventDefault();
+        });
+        panelHeader.addEventListener('pointermove', onDragMove);
+        panelHeader.addEventListener('pointerup', endDrag);
+        panelHeader.addEventListener('pointercancel', endDrag);
+      }
+      window.addEventListener('resize', resetPanelPositionForMobile);
+      function toggleMenu(force){
+        if(!menu) return;
+        const next = typeof force === 'boolean' ? force : (menu.style.display === 'none' || menu.style.display === '' ? true : false);
+        menu.style.display = next ? 'block' : 'none';
+        if(openBtn) openBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
+      }
+      function getActiveSlideText(){
+        try{
+          const activeItem = document.querySelector('.thumbnail-item.active, .presentation-thumb-wrap.active');
+          const thumb = activeItem ? activeItem.querySelector('img.thumbnail-image, img.presentation-thumb') : null;
+          if(thumb && thumb.alt){
+            const label = String(thumb.alt).trim();
+            if(/^(page|slide)\s*\d+$/i.test(label)) return '';
+            return label;
+          }
+        }catch(e){}
+        return '';
+      }
+
+      function getActiveSlidePreviewSrc(){
+        try{
+          const activeItem = document.querySelector('.thumbnail-item.active, .presentation-thumb-wrap.active');
+          const thumb = activeItem ? activeItem.querySelector('img.thumbnail-image, img.presentation-thumb') : null;
+          if(thumb && (thumb.currentSrc || thumb.src)) return thumb.currentSrc || thumb.src;
+
+          const mainImg = document.querySelector('#presentation-main-viewer .slide-image, #presentation-main-viewer img');
+          if(mainImg && mainImg.tagName === 'IMG' && (mainImg.currentSrc || mainImg.src)) return mainImg.currentSrc || mainImg.src;
+
+          const mainCanvas = document.querySelector('#presentation-main-viewer canvas');
+          if(mainCanvas && typeof mainCanvas.toDataURL === 'function') return mainCanvas.toDataURL('image/png');
+        }catch(e){}
+        return '';
+      }
+
+      function getSlideTextForRequest(){
+        let txt = (input && input.value ? input.value : '').trim();
+        if(txt) return txt;
+        const active = getActiveSlideText();
+        if(active) return active;
+        return '';
+      }
+
+      function buildUserPrompt(action, text, audience){
+        const clean = (text || '').trim();
+        const base = clean ? `\n\nSlide text:\n${clean}` : '';
+        switch(action){
+          case 'simplify':
+            return `Simplify the slide text to plain, easy-to-understand language.${base}`;
+          case 'rephrase':
+            return `Rephrase the slide text while preserving meaning and clarity.${base}`;
+          case 'key_points':
+            return `Extract concise key points from the slide text as bullet points.${base}`;
+          case 'elaborate':
+            return `Elaborate the slide text with clear explanations and examples.${base}`;
+          case 'adapt_for_audience':
+            return `Adapt the slide text for the audience: ${audience}.${base}`;
+          case 'explain_like_12':
+            return `Explain the slide text in simple language suitable for a 12-year-old.${base}`;
+          case 'real_world_example':
+            return `Give a concrete real-world example that illustrates the slide text.${base}`;
+          case 'analogy':
+            return `Explain the slide text using a helpful analogy.${base}`;
+          case 'check_understanding':
+            return `Ask a few short questions to check understanding of the slide text.${base}`;
+          case 'glossary':
+            return `Extract and define key terms from the slide text.${base}`;
+          case 'custom':
+            return `Follow my instruction using the slide text.${base}`;
+          default:
+            return `Help with the slide text.${base}`;
+        }
+      }
+
+      function openPanelWithContext(reset){
+        if(reset){
+          if(input) input.value = '';
+          if(messagesEl) messagesEl.innerHTML = '';
+          const slideText = getActiveSlideText();
+          if(input && slideText) input.value = slideText + '\n';
+        }
+        // populate the small thumbnail preview inside the panel
+        try{
+          const previewWrap = document.getElementById('ai-slide-preview');
+          const thumbImg = document.getElementById('ai-slide-thumb');
+          if(thumbImg){
+            const previewSrc = getActiveSlidePreviewSrc();
+            console.log('Slide selected:', previewSrc || null);
+            thumbImg.src = previewSrc || '';
+            thumbImg.style.width = '100%';
+            thumbImg.style.height = 'auto';
+            thumbImg.style.objectFit = 'contain';
+            thumbImg.style.display = previewSrc ? 'block' : 'none';
+            thumbImg.loading = 'eager';
+            thumbImg.decoding = 'async';
+            if(previewWrap){
+              previewWrap.style.display = previewSrc ? 'block' : 'none';
+            }
+          }
+        }catch(e){}
+        showPanel();
+        // action selection handled by dropdown
+      }
+
+      openBtn.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        toggleMenu();
+      });
+      closeBtn.addEventListener('click', hidePanel);
+
+      document.addEventListener('click', (ev)=>{
+        if(!menu || !openBtn) return;
+        if(menu.contains(ev.target) || openBtn.contains(ev.target)) return;
+        toggleMenu(false);
+      });
+
+      const actionLabels = {
+        rephrase: 'Rephrase',
+        simplify: 'Simplify',
+        key_points: 'Key points',
+        elaborate: 'Elaborate',
+        adapt_for_audience: 'Adapt for audience',
+        explain_like_12: "Explain like I'm 12",
+        real_world_example: 'Real-world example',
+        analogy: 'Analogy',
+        check_understanding: 'Check understanding',
+        glossary: 'Key terms',
+        custom: 'Custom instruction',
+      };
+
+      if(menu){
+        menu.querySelectorAll('.ai-menu-item').forEach((item)=>{
+          item.addEventListener('click', async (ev)=>{
+            ev.preventDefault();
+            ev.stopPropagation();
+            const action = item.dataset.aiAction || '';
+            toggleMenu(false);
+            openPanelWithContext(true);
+            if(!action || action === 'open_chat') return;
+            let txt = getSlideTextForRequest();
+            if(!txt){
+              // send a short placeholder to trigger server-side slide extraction
+              txt = 'slide';
+            }
+            const label = actionLabels[action] || action;
+            if(action === 'adapt_for_audience'){
+              const aud = prompt('Adapt for which audience? (e.g., High school students)');
+              if(!aud) return;
+              await sendAction(action, txt, aud, label);
+              return;
+            }
+            if(action === 'custom'){
+              const instruction = prompt('What should the assistant do with the slide text?');
+              if(!instruction) return;
+              await sendAction(action, txt, null, instruction);
+              return;
+            }
+            await sendAction(action, txt, null, label);
+          });
+        });
+      }
+
+      async function sendAction(action, text, audience, displayMessage){
+        
+        // show user message (right)
+        const userPrompt = displayMessage || buildUserPrompt(action, text, audience);
+        appendMessage('user', userPrompt);
+        chatHistory.push({ role: 'user', content: userPrompt });
+        if(chatHistory.length > maxHistory * 2) chatHistory.splice(0, chatHistory.length - maxHistory * 2);
+        // placeholder assistant bubble with typing indicator
+        const assistEl = appendMessage('assistant', '');
+        if(assistEl){
+          assistEl.classList.add('ai-typing');
+          assistEl.innerHTML = '<span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>';
+        }
+        scrollToBottom({ smooth: true });
+
+        function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        try{
+          // determine slide index safely (viewer `currentIndex` may be out of scope)
+          let slideIndex = 0;
+          try{
+            if (typeof currentIndex !== 'undefined') slideIndex = currentIndex;
+            else {
+              const active = document.querySelector('.presentation-thumb.active');
+              if(active && active.dataset && typeof active.dataset.index !== 'undefined') slideIndex = parseInt(active.dataset.index, 10) || 0;
+            }
+          }catch(e){ slideIndex = 0; }
+          const body = {
+            action: action,
+            slide_id: slideIndex,
+            slide_text: text,
+            user_input: displayMessage || '',
+            history: chatHistory.slice(-maxHistory * 2),
+          };
+          if(action === 'adapt_for_audience' && audience) body.audience = audience;
+          const maxRetries = 4;
+          let r = null;
+          for(let attempt = 0; attempt <= maxRetries; attempt++){
+            try{
+              r = await fetch(`/api/presentations/${presentationId}/ai/slide`, { method: 'POST', credentials: 'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            }catch(err){
+              if(attempt < maxRetries){
+                const delay = Math.min(1000 * Math.pow(2, attempt) + 500, 8000);
+                if(assistEl){ assistEl.classList.add('ai-typing'); assistEl.textContent = `AI busy. Retrying in ${Math.ceil(delay/1000)}s…`; }
+                await sleep(delay);
+                continue;
+              }
+              throw err;
+            }
+
+            if(r && r.ok) break;
+            const status = r ? r.status : 0;
+            if(r && (status === 429 || status === 502 || status === 503) && attempt < maxRetries){
+              const retryAfter = parseInt(r.headers.get('Retry-After') || '0', 10);
+              const delay = retryAfter ? retryAfter * 1000 : Math.min(1000 * Math.pow(2, attempt) + 500, 8000);
+              if(assistEl){ assistEl.classList.add('ai-typing'); assistEl.textContent = `AI busy. Retrying in ${Math.ceil(delay/1000)}s…`; }
+              await sleep(delay);
+              continue;
+            }
+            break;
+          }
+
+          if(!r || !r.ok){
+            // server error: read body for details
+            let txt = '';
+            try{ txt = await r.text(); txt = txt || (r && r.statusText) || ''; }catch(e){ txt = (r && r.statusText) || String(e); }
+            assistEl.textContent = `AI request failed (${r ? r.status : 'no response'}): ${txt || 'no details'}`;
+            scrollToBottom({ smooth: true });
+            return null;
+          }
+          let j = null;
+          try{
+            j = await r.json();
+          }catch(e){
+            const t = await r.text().catch(()=>null);
+            console.error('AI response parse error', e, t);
+            assistEl.textContent = `AI response parse error (${e.message}): ${t || 'no body'}`;
+            scrollToBottom({ smooth: true });
+            return null;
+          }
+          // replace optimistic suggestion with authoritative server result
+          const finalText = (j && j.result) ? j.result : '';
+          if(assistEl){
+            assistEl.classList.remove('ai-typing');
+            if(window.renderAiMarkdown){
+              assistEl.innerHTML = window.renderAiMarkdown(finalText || '');
+            } else {
+              assistEl.textContent = finalText;
+            }
+          }
+          scrollToBottom({ smooth: true });
+          if(finalText){
+            chatHistory.push({ role: 'assistant', content: finalText });
+            if(chatHistory.length > maxHistory * 2) chatHistory.splice(0, chatHistory.length - maxHistory * 2);
+          }
+
+          return j.result || null;
+        }catch(e){
+          console.error('AI slide sendAction error', e);
+          if(assistEl){ assistEl.classList.remove('ai-typing'); assistEl.textContent = 'AI request failed'; }
+          scrollToBottom({ smooth: true });
+          return null;
+        }
+      }
+
+      sendBtn.addEventListener('click', async ()=>{
+        const instruction = (input.value || '').trim();
+        if(!instruction){ alert('Please type an instruction for the assistant.'); return; }
+        const slideText = getSlideTextForRequest();
+        await sendAction('custom', slideText, null, instruction);
+        if(input) input.value = '';
+      });
+
+      if(input){
+        input.addEventListener('keydown', async (e)=>{
+          if(e.isComposing) return;
+          if(e.key !== 'Enter' || e.shiftKey) return;
+          e.preventDefault();
+          const instruction = (input.value || '').trim();
+          if(!instruction) return;
+          const slideText = getSlideTextForRequest();
+          await sendAction('custom', slideText, null, instruction);
+          input.value = '';
+        });
+      }
+
+      if(quickActionsEl){
+        quickActionsEl.addEventListener('click', async (e)=>{
+          const btn = e.target.closest('[data-quick-action]');
+          if(!btn) return;
+          const kind = btn.getAttribute('data-quick-action');
+          const slideText = getSlideTextForRequest() || 'slide';
+          if(kind === 'explain'){
+            await sendAction('custom', slideText, null, 'Explain this deeper, step by step.');
+          }else if(kind === 'example'){
+            await sendAction('custom', slideText, null, 'Give a practical example.');
+          }else if(kind === 'question'){
+            await sendAction('custom', slideText, null, 'Ask me one comprehension question.');
+          }
+        });
+      }
+    })();
 // Admin preview list (owner only)
 (function(){
   const listEl = document.getElementById('admin-preview-list');

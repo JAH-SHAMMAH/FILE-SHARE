@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Edit profile{% endblock %}
+
+{% block content %}
+<div class="container content-card" style="max-width:760px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h2 style="margin:0;">Edit profile</h2>
+    {% if user_obj and user_obj.username %}
+      <a class="btn btn--ghost" href="/users/{{ user_obj.username }}">Back to profile</a>
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.35);color:#fecaca;">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/me/edit" enctype="multipart/form-data" style="margin-top:14px;display:grid;gap:12px;">
+    <label style="display:grid;gap:6px;">
+      <span>Username</span>
+      <input name="username" value="{{ user_obj.username or '' }}" placeholder="Username" />
+    </label>
+
+    <label style="display:grid;gap:6px;">
+      <span>Full name</span>
+      <input name="full_name" value="{{ user_obj.full_name or '' }}" placeholder="Your full name" />
+    </label>
+
+    <label style="display:grid;gap:6px;">
+      <span>Date of birth</span>
+      <input type="date" name="date_of_birth" value="{{ user_obj.date_of_birth or '' }}" />
+    </label>
+
+    <label style="display:grid;gap:6px;">
+      <span>Bio</span>
+      <textarea name="bio" rows="4" placeholder="Tell people about yourself">{{ user_obj.bio or '' }}</textarea>
+    </label>
+
+    <label style="display:grid;gap:6px;">
+      <span>Avatar image</span>
+      <input type="file" name="avatar" accept="image/*" />
+    </label>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="btn" type="submit">Save changes</button>
+      {% if user_obj and user_obj.username %}
+        <a class="btn btn--ghost" href="/users/{{ user_obj.username }}">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
