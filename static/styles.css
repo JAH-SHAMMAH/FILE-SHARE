@@ -5098,6 +5098,108 @@ html, body { overflow-x: hidden; }
   }
 }
 
+/* Global responsive pass (keep at end to win over duplicated earlier rules) */
+@media (max-width: 900px) {
+  .container,
+  .upload-shell--slim,
+  .content-card {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .uploads-nav,
+  .uploads-tabs,
+  .hero-search,
+  .auth-actions,
+  .card__actions,
+  .preview-actions,
+  .meta-grid,
+  .meta-grid--compact {
+    flex-wrap: wrap !important;
+  }
+
+  .upload-layout,
+  .upload-shell,
+  .layout-two-col,
+  .dashboard-hero {
+    grid-template-columns: 1fr !important;
+    display: grid !important;
+  }
+
+  .gallery-grid,
+  .grid,
+  .grid--cards {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .scroll-row__nav {
+    display: none !important;
+  }
+
+  .preview-dialog {
+    width: 98vw !important;
+    height: 84vh !important;
+    border-radius: 12px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .container,
+  .upload-shell--slim,
+  .content-card {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .uploads-nav,
+  .uploads-tabs,
+  .hero-search,
+  .preview-actions,
+  .auth-actions,
+  .card__actions {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .hero-search input,
+  .hero-search button,
+  .header-search input,
+  .header-search button,
+  .btn,
+  .nav-link.btn,
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .card__thumb img,
+  .card__thumb iframe,
+  .card__thumb .thumb-frame,
+  .featured-card .card__thumb img,
+  .featured-card .card__thumb iframe {
+    height: 160px !important;
+  }
+
+  .gallery-card .gallery-meta,
+  .card__body {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .preview-body--thumbs {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr !important;
+  }
+}
+
 
 
 
