@@ -1292,10 +1292,6 @@ body {
   font-size: 16px;
   line-height: 1.6;
 }
-.role-teacher body,
-body.role-teacher {
-  /* keep the same base palette, but allow teacher-specific accents elsewhere */
-}
 .page-shell { padding: 0 0 32px; background: var(--bg); }
 .container { max-width: var(--max-width); margin: 0 auto; padding: 20px; }
 .muted { color: var(--muted); }
