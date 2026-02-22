@@ -5638,7 +5638,6 @@ html, body { overflow-x: hidden; }
 
   /* Form cleanup */
   form,
-  .auth-form,
   .upload-form {
     width: 100% !important;
   }
@@ -5677,7 +5676,6 @@ html, body { overflow-x: hidden; }
   .feed-shell,
   .upload-shell,
   .content-card,
-  .auth-shell,
   .role-page {
     width: 100% !important;
     max-width: 100% !important;
@@ -5687,7 +5685,6 @@ html, body { overflow-x: hidden; }
   .content-card,
   .feed-shell,
   .upload-shell,
-  .auth-shell,
   .role-card {
     padding-left: 16px !important;
     padding-right: 16px !important;
@@ -5699,12 +5696,11 @@ html, body { overflow-x: hidden; }
   .meta-grid--compact,
   .upload-layout,
   .layout-two-col,
-  .auth-page {
+  .role-page {
     grid-template-columns: 1fr !important;
   }
 
   form,
-  .auth-form,
   .upload-form,
   .role-chooser {
     width: 100% !important;
@@ -5712,8 +5708,7 @@ html, body { overflow-x: hidden; }
   }
 
   .form-group,
-  .field,
-  .auth-field {
+  .field {
     display: block !important;
     margin-bottom: 16px !important;
   }
@@ -5722,9 +5717,7 @@ html, body { overflow-x: hidden; }
   select,
   textarea,
   button,
-  .btn,
-  .auth-btn-primary,
-  .auth-field input {
+  .btn {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
@@ -5733,8 +5726,7 @@ html, body { overflow-x: hidden; }
   }
 
   button,
-  .btn,
-  .auth-btn-primary {
+  .btn {
     min-height: 44px !important;
     padding: 10px 14px !important;
   }
@@ -5748,39 +5740,23 @@ html, body { overflow-x: hidden; }
   .content-card,
   .feed-shell,
   .upload-shell,
-  .auth-shell,
   .role-card {
     padding-left: 12px !important;
     padding-right: 12px !important;
   }
 
-  body.auth-body {
-    align-items: flex-start !important;
-    justify-content: flex-start !important;
-    padding-top: 10px !important;
-  }
-
-  .auth-shell {
-    padding-top: 10px !important;
-    padding-bottom: 18px !important;
-  }
-
-  .auth-card--dark,
   .role-card {
     border-radius: 14px !important;
     padding: 16px 14px !important;
   }
 
-  .auth-title,
   .role-title {
     font-size: 22px !important;
     line-height: 1.25 !important;
   }
 
-  .auth-subtitle,
   .role-subtitle,
-  .auth-switch,
-  .auth-terms {
+  .role-picker-note {
     font-size: 13px !important;
   }
 }
@@ -5835,36 +5811,34 @@ html, body { overflow-x: hidden; }
     min-height: 44px !important;
   }
 
-  form,
-  .auth-form {
+  form {
     width: 100% !important;
     padding: 20px 16px !important;
   }
 
   .form-group,
-  .auth-field {
+  .field {
     display: flex !important;
     flex-direction: column !important;
     margin-bottom: 16px !important;
   }
 
   .form-group label,
-  .auth-field,
   label {
     margin-bottom: 6px !important;
     font-weight: 500 !important;
   }
 
   input,
-  .auth-field input {
+  textarea,
+  select {
     width: 100% !important;
     padding: 12px !important;
     font-size: 16px !important;
     border-radius: 6px !important;
   }
 
-  button,
-  .auth-btn-primary {
+  button {
     width: 100% !important;
     padding: 14px !important;
     font-size: 16px !important;
@@ -5877,16 +5851,6 @@ html, body { overflow-x: hidden; }
     flex-direction: column !important;
   }
 
-  .auth-shell {
-    max-width: 560px !important;
-    margin: 0 auto !important;
-    padding: 16px 12px 24px !important;
-  }
-
-  .auth-card--dark {
-    padding: 18px 16px !important;
-    border-radius: 12px !important;
-  }
 }
 
 
