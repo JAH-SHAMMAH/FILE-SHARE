@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.venv/
+venv/
+.git/
+.gitignore
+uploads/
+vendor/

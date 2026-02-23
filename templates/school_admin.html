@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>School Admin</title>
-  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}?v=20260223">
+  <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}?v={{ request.state.static_version }}">
 </head>
 <body>
   <div class="container">

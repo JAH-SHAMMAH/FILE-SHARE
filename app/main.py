@@ -3708,6 +3708,16 @@ async def add_current_user_to_request(request: Request, call_next):
         )
     else:
         request.state.current_user = None
+    # expose a deploy-aware static version for cache-busting stylesheet URLs
+    try:
+        request.state.static_version = (
+            os.getenv('STATIC_VERSION')
+            or os.getenv('RENDER_GIT_COMMIT')
+            or os.getenv('RENDER_SERVICE_ID')
+            or 'dev'
+        )
+    except Exception:
+        request.state.static_version = 'dev'
     # load categories for the header/hamburger menu (merged from DB + fallback list)
     try:
         request.state.categories = get_available_category_names()
@@ -3728,6 +3738,15 @@ async def add_current_user_to_request(request: Request, call_next):
         request.state.cookie_consent = None
         request.state.cookie_consent_parsed = None
     response = await call_next(request)
+    # prevent stale CSS in browsers/CDNs after deploys
+    try:
+        path = (request.url.path or '').lower()
+        if path.endswith('.css'):
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+    except Exception:
+        pass
     # Ensure a CSRF token cookie is present for form POSTs (accessible to JS)
     try:
         if not request.cookies.get('csrf_token'):
