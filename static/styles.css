@@ -5872,6 +5872,37 @@ html, body { overflow-x: hidden; }
   }
 }
 
+/* =========================
+   MOBILE FIX FOR AUTH
+   ========================= */
 
+@media (max-width: 768px) {
 
+  .auth-shell {
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
+  .auth-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px;
+    border-radius: 16px;
+  }
+
+  .auth-field input {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px; /* prevents zoom on iPhone */
+  }
+
+  .auth-btn-primary {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+  }
+
+}
