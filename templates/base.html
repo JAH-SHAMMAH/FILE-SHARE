@@ -179,6 +179,7 @@
           {% endif %}
 
           {% set cu = request.state.current_user if request and request.state else None %}
+          <div class="header-primary-links">
             {% if cu %}
             <a class="nav-link" href="{{ url_for('student_spaces') }}">My Spaces</a>
             {% if request.state.current_user and request.state.current_user.site_role != 'teacher' %}
@@ -197,12 +198,14 @@
             <a class="nav-link" href="{{ url_for('login') }}">Sign in</a>
             <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
           {% endif %}
+          </div>
         </div>
 
-        <button id="hamburger" class="hamburger" aria-label="Open categories" aria-expanded="false">☰</button>
+        <button id="hamburger" class="hamburger" aria-label="Open menu" aria-expanded="false">☰</button>
 
         {% if request.state.current_user %}
-          <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+          <button class="profile-trigger avatar-button header-profile-trigger" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+            <span class="header-profile-name">{{ request.state.current_user.username }}</span>
             <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
           </button>
           <button id="notif-launcher" class="icon-btn" title="Notifications" style="position:relative;margin-left:6px">🔔<span id="notif-badge" style="position:absolute;right:-6px;top:-6px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;display:none">0</span></button>
@@ -239,10 +242,31 @@
           </div>
         {% endif %}
 
-        {% if request.state.current_user %}
         <div id="hamburger-menu" class="hamburger-menu" aria-hidden="true">
           <div class="hamburger-menu__inner">
+            <div class="hamburger-menu__section">
+              <h4>Navigation</h4>
+              <ul>
+                {% if cu %}
+                <li><a href="{{ url_for('student_spaces') }}">My Spaces</a></li>
+                {% if request.state.current_user and request.state.current_user.site_role != 'teacher' %}
+                <li><a href="{{ url_for('student_materials') }}">Materials</a></li>
+                {% endif %}
+                {% if cu.site_role == 'teacher' %}
+                <li><a href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a></li>
+                {% endif %}
+                <li><a href="{{ url_for('messages_page') }}">{{ t_messages }}</a></li>
+                {% else %}
+                <li><a href="{{ url_for('about') }}">About us</a></li>
+                <li><a href="{{ url_for('upload') }}">{{ t_upload }}</a></li>
+                <li><a href="{{ url_for('login') }}">Sign in</a></li>
+                <li><a href="{{ url_for('register') }}">Get started</a></li>
+                {% endif %}
+              </ul>
+            </div>
+
             {% if request.state.current_user %}
+            <div class="hamburger-menu__divider"></div>
             <div class="hamburger-menu__section">
               <h4>Your account</h4>
               <ul>
@@ -253,7 +277,6 @@
             {% endif %}
           </div>
         </div>
-        {% endif %}
       </nav>
     </div>
   </header>

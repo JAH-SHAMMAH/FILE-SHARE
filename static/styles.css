@@ -5896,3 +5896,116 @@ html body.auth-body .auth-btn-primary {
     line-height: 1.25 !important;
   }
 }
+
+/* =========================
+   Header Nav Structure (Desktop + Mobile)
+   ========================= */
+
+.site-header .header-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.site-header .nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.site-header .header-primary-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.site-header .header-profile-name {
+  display: none;
+}
+
+.site-header .hamburger {
+  display: none;
+}
+
+.site-header #hamburger-menu.hamburger-menu {
+  right: 0;
+  left: auto;
+  top: calc(100% + 8px);
+  width: min(320px, calc(100vw - 24px));
+  display: block;
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 220ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.site-header #hamburger-menu.hamburger-menu.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 70vh;
+  overflow: auto;
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  .site-header .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  .site-header .header-left {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .site-header .header-nav {
+    flex: 0 0 auto;
+    margin-left: auto;
+    gap: 8px;
+  }
+
+  .site-header .header-primary-links {
+    display: none;
+  }
+
+  .site-header .hamburger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+  }
+
+  .site-header #notif-launcher {
+    display: none;
+  }
+
+  .site-header .header-profile-trigger {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .site-header .header-profile-name {
+    display: inline-block;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .site-header .profile-menu {
+    right: 8px;
+    top: calc(100% + 8px);
+  }
+}
