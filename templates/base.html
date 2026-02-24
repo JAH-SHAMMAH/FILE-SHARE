@@ -306,13 +306,12 @@
       <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;">
         <div id="category-scroll" class="category-scroll" role="list">
           {% set ns = namespace(seen=[]) %}
-          {% set visible_limit = 7 %}
+          {% set visible_limit = 2 %}
           {% for c in request.state.categories or [] %}
             {% set c_lower = c|lower %}
             {% if c_lower not in suggested_lower and c_lower not in removed_cats and c_lower not in ns.seen %}
               {% set is_active = (c == request.query_params.get('category')) %}
-              {% set hide_by_default = (loop.index > visible_limit) and (not is_active) %}
-              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if is_active %} active{% endif %}{% if hide_by_default %} js-extra-category hidden-category-chip{% endif %}" href="/search?category={{ c|url_encode }}" {% if hide_by_default %}style="display:none;"{% endif %}>{{ c }}</a>
+              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if is_active %} active{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
               {% set _ = ns.seen.append(c_lower) %}
             {% endif %}
           {% endfor %}
@@ -326,15 +325,13 @@
   <script>
     (function () {
       const toggleBtn = document.getElementById('toggle-all-categories');
-      if (!toggleBtn) return;
-      const extraChips = Array.from(document.querySelectorAll('.js-extra-category'));
-      if (!extraChips.length) return;
+        const categoryBar = document.querySelector('.category-bar');
+        const categoryScroll = document.getElementById('category-scroll');
+        if (!toggleBtn || !categoryBar || !categoryScroll) return;
       let expanded = false;
       toggleBtn.addEventListener('click', function () {
         expanded = !expanded;
-        extraChips.forEach(function (chip) {
-          chip.style.display = expanded ? '' : 'none';
-        });
+          categoryBar.classList.toggle('is-expanded', expanded);
         toggleBtn.textContent = expanded ? 'Show fewer categories' : 'Show all categories';
       });
     })();

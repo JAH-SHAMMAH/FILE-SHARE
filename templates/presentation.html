@@ -170,6 +170,44 @@
     </div>
   </div>
 
+  <div class="mobile-viewer-bar" id="mobile-viewer-bar" aria-label="Presentation quick actions">
+    <button type="button" class="mobile-viewer-bar__action" id="mobile-gallery-open">Gallery</button>
+    <button type="button" class="mobile-viewer-bar__action" id="mobile-bookmark-action">Bookmark</button>
+    <button type="button" class="mobile-viewer-bar__action" id="mobile-more-open">More</button>
+    <a class="mobile-viewer-bar__action" href="{{ viewer_url or original_url or '#' }}" id="mobile-download-link" download>Download</a>
+  </div>
+
+  <div class="mobile-slide-gallery" id="mobile-slide-gallery" aria-hidden="true">
+    <button type="button" class="mobile-slide-gallery__backdrop" id="mobile-gallery-close" aria-label="Close gallery"></button>
+    <div class="mobile-slide-gallery__panel" role="dialog" aria-modal="true" aria-label="Slide gallery">
+      <div class="mobile-slide-gallery__header">
+        <strong>Slide gallery</strong>
+        <button type="button" class="btn btn--ghost" id="mobile-gallery-close-btn">Close</button>
+      </div>
+      <div class="mobile-slide-gallery__grid" id="mobile-slide-gallery-grid"></div>
+    </div>
+  </div>
+
+  <div class="mobile-action-sheet" id="mobile-action-sheet" aria-hidden="true">
+    <button type="button" class="mobile-action-sheet__backdrop" id="mobile-action-sheet-close" aria-label="Close actions"></button>
+    <div class="mobile-action-sheet__panel" role="dialog" aria-modal="true" aria-label="More actions">
+      <button type="button" class="mobile-action-sheet__item" id="mobile-share-action">Share</button>
+      <button type="button" class="mobile-action-sheet__item" id="mobile-report-action">Report</button>
+      <button type="button" class="mobile-action-sheet__item" id="mobile-embed-action">Embed</button>
+      <button type="button" class="mobile-action-sheet__item" id="mobile-copy-link-action">Copy link</button>
+    </div>
+  </div>
+
+  {% if current_user %}
+  <button type="button" class="mobile-ai-fab" id="mobile-ai-fab" aria-label="Slide AI assistant">AI</button>
+  <div class="mobile-ai-quick" id="mobile-ai-quick" aria-hidden="true">
+    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="elaborate">Explain this slide</button>
+    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="key_points">Summarize this slide</button>
+    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="check_understanding">Ask me questions</button>
+    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="open_chat">Open AI chat</button>
+  </div>
+  {% endif %}
+
   <!-- Two-column viewer: large viewer left, thumbnails right -->
   <div class="presentation-layout presentation-layout--viewer" style="margin-top:18px;">
     <div class="presentation-viewer-main-column main-slide-view">
@@ -1424,6 +1462,182 @@ function localAiTransform(action, text, audience){
     if(e.target === modal){
       modal.style.display = 'none';
     }
+  });
+})();
+
+(function(){
+  const gallery = document.getElementById('mobile-slide-gallery');
+  const galleryGrid = document.getElementById('mobile-slide-gallery-grid');
+  const galleryOpen = document.getElementById('mobile-gallery-open');
+  const galleryClose = document.getElementById('mobile-gallery-close');
+  const galleryCloseBtn = document.getElementById('mobile-gallery-close-btn');
+  const moreOpen = document.getElementById('mobile-more-open');
+  const actionSheet = document.getElementById('mobile-action-sheet');
+  const actionSheetClose = document.getElementById('mobile-action-sheet-close');
+  const bookmarkAction = document.getElementById('mobile-bookmark-action');
+  const shareAction = document.getElementById('mobile-share-action');
+  const reportAction = document.getElementById('mobile-report-action');
+  const embedAction = document.getElementById('mobile-embed-action');
+  const copyLinkAction = document.getElementById('mobile-copy-link-action');
+  const presentationFrame = document.getElementById('presentation-viewer-frame');
+
+  function getViewer(){
+    return window.__presentationViewer || null;
+  }
+
+  function openGallery(){
+    if(!gallery) return;
+    gallery.classList.add('is-open');
+    gallery.setAttribute('aria-hidden', 'false');
+    renderGallery();
+  }
+
+  function closeGallery(){
+    if(!gallery) return;
+    gallery.classList.remove('is-open');
+    gallery.setAttribute('aria-hidden', 'true');
+  }
+
+  function openActionSheet(){
+    if(!actionSheet) return;
+    actionSheet.classList.add('is-open');
+    actionSheet.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeActionSheet(){
+    if(!actionSheet) return;
+    actionSheet.classList.remove('is-open');
+    actionSheet.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderGallery(){
+    if(!galleryGrid) return;
+    const viewer = getViewer();
+    if(!viewer || !Array.isArray(viewer.slides) || !viewer.slides.length){
+      galleryGrid.innerHTML = '<div class="muted">Slides are loading…</div>';
+      return;
+    }
+    const currentIndex = Number(viewer.currentIndex || 0);
+    galleryGrid.innerHTML = viewer.slides.map((slide, index) => {
+      const src = slide.thumb || slide.url;
+      const activeClass = index === currentIndex ? ' is-active' : '';
+      return `<button type="button" class="mobile-slide-gallery__thumb${activeClass}" data-slide-index="${index}"><img src="${src}" alt="Slide ${index + 1}" loading="lazy"/></button>`;
+    }).join('');
+  }
+
+  if(galleryOpen){
+    galleryOpen.addEventListener('click', openGallery);
+  }
+  if(galleryClose){
+    galleryClose.addEventListener('click', closeGallery);
+  }
+  if(galleryCloseBtn){
+    galleryCloseBtn.addEventListener('click', closeGallery);
+  }
+  if(galleryGrid){
+    galleryGrid.addEventListener('click', function(event){
+      const trigger = event.target.closest('[data-slide-index]');
+      if(!trigger) return;
+      const index = Number(trigger.getAttribute('data-slide-index'));
+      const viewer = getViewer();
+      if(viewer && Number.isFinite(index) && typeof viewer.showPage === 'function'){
+        viewer.showPage(index);
+      }
+      closeGallery();
+      if(presentationFrame){
+        presentationFrame.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  if(moreOpen){
+    moreOpen.addEventListener('click', openActionSheet);
+  }
+  if(actionSheetClose){
+    actionSheetClose.addEventListener('click', closeActionSheet);
+  }
+
+  if(bookmarkAction){
+    bookmarkAction.addEventListener('click', function(){
+      const originalBookmark = document.querySelector('.bookmark-btn');
+      if(originalBookmark){
+        originalBookmark.click();
+      }
+    });
+  }
+
+  if(shareAction){
+    shareAction.addEventListener('click', function(){
+      closeActionSheet();
+      const shareBtn = document.querySelector('.btn-share');
+      if(shareBtn) shareBtn.click();
+    });
+  }
+
+  if(reportAction){
+    reportAction.addEventListener('click', function(){
+      closeActionSheet();
+      location.href = `/contact?subject=${encodeURIComponent('Report presentation {{ p.id }}')}`;
+    });
+  }
+
+  if(embedAction){
+    embedAction.addEventListener('click', async function(){
+      closeActionSheet();
+      const embedCode = `<iframe src="${location.origin}/presentations/{{ p.id }}?embed=1" width="960" height="540" frameborder="0" allowfullscreen></iframe>`;
+      try{
+        await navigator.clipboard.writeText(embedCode);
+        alert('Embed code copied');
+      }catch(_err){
+        alert('Could not copy embed code');
+      }
+    });
+  }
+
+  if(copyLinkAction){
+    copyLinkAction.addEventListener('click', async function(){
+      closeActionSheet();
+      try{
+        await navigator.clipboard.writeText(location.href);
+        alert('Link copied');
+      }catch(_err){
+        alert('Could not copy link');
+      }
+    });
+  }
+})();
+
+(function(){
+  const aiFab = document.getElementById('mobile-ai-fab');
+  const aiQuick = document.getElementById('mobile-ai-quick');
+  if(!aiFab || !aiQuick) return;
+
+  aiFab.addEventListener('click', function(){
+    const open = aiQuick.classList.toggle('is-open');
+    aiQuick.setAttribute('aria-hidden', open ? 'false' : 'true');
+  });
+
+  aiQuick.addEventListener('click', function(event){
+    const trigger = event.target.closest('[data-mobile-ai]');
+    if(!trigger) return;
+    const action = trigger.getAttribute('data-mobile-ai');
+    aiQuick.classList.remove('is-open');
+    aiQuick.setAttribute('aria-hidden', 'true');
+    const menuItem = document.querySelector(`.ai-menu-item[data-ai-action="${action}"]`);
+    if(menuItem){
+      menuItem.click();
+      return;
+    }
+    const aiButton = document.getElementById('ai-slide-btn');
+    if(aiButton){
+      aiButton.click();
+    }
+  });
+
+  document.addEventListener('click', function(event){
+    if(aiQuick.contains(event.target) || aiFab.contains(event.target)) return;
+    aiQuick.classList.remove('is-open');
+    aiQuick.setAttribute('aria-hidden', 'true');
   });
 })();
 </script>
