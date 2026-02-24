@@ -5436,22 +5436,7 @@ html, body { overflow-x: hidden; }
     padding-right: 16px !important;
   }
 
-  h1 {
-    font-size: 22px !important;
-  }
-
-  h2 {
-    font-size: 18px !important;
-  }
-
-  /* Header: structured, stacked, tap-friendly */
-  .site-header .header-inner {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 10px !important;
-    padding: 12px 0 !important;
-  }
+  /* Header and titles are handled by dedicated mobile-first blocks below */
 
   .site-header .brand,
   .site-header .brand:visited {
@@ -5462,29 +5447,11 @@ html, body { overflow-x: hidden; }
   }
 
   .site-header .header-nav {
-    width: 100% !important;
+    width: auto !important;
     display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
+    flex-direction: row !important;
+    align-items: center !important;
     gap: 8px !important;
-  }
-
-  .site-header .header-nav .nav-cta {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-    width: 100% !important;
-  }
-
-  .site-header .header-nav .nav-link,
-  .site-header .header-nav .btn,
-  .site-header .header-nav button {
-    flex: 1 1 auto !important;
-    min-width: 120px !important;
-    text-align: center !important;
-    padding: 10px 14px !important;
-    font-size: 14px !important;
-    min-height: 42px !important;
   }
 
   /* Featured/feed cards: compact and clean (1 per row) */
@@ -6274,5 +6241,148 @@ html body.auth-body .auth-btn-primary {
   .mobile-ai-fab,
   .mobile-ai-quick {
     display: none !important;
+  }
+}
+
+/* =========================
+   Homepage Header + Hero (mobile-first structural)
+   ========================= */
+
+.home-header__inner {
+  width: 100%;
+}
+
+.home-header__mobile-row {
+  display: none;
+}
+
+.home-header__desktop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.landing-hero__inner {
+  width: 100%;
+}
+
+.landing-hero__title {
+  width: 100%;
+}
+
+.landing-hero__lead {
+  width: 100%;
+}
+
+.landing-hero__actions {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .home-header .header-inner.home-header__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    width: 100%;
+    min-height: 56px;
+    padding: 8px 0;
+    gap: 8px;
+  }
+
+  .home-header__desktop-row {
+    display: none !important;
+  }
+
+  .home-header__mobile-row {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    width: 100%;
+    min-height: 40px;
+    gap: 10px;
+  }
+
+  .home-header__brand {
+    flex: 0 0 auto;
+    min-width: 0;
+    font-size: 20px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .home-header__cta {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .home-header .lang-flag {
+    max-height: 22px;
+    width: auto;
+    flex: 0 0 auto;
+    object-fit: contain;
+    display: inline-block;
+  }
+
+  .landing-hero {
+    padding: 52px 0 56px;
+  }
+
+  .landing-hero__inner {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+
+  .landing-hero__title {
+    font-size: clamp(3.2rem, 14vw, 5rem);
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    margin: 0;
+    text-align: left;
+    text-wrap: balance;
+  }
+
+  .landing-hero__title .hl {
+    display: block;
+    width: 100%;
+    line-height: inherit;
+  }
+
+  .landing-hero__lead {
+    font-size: clamp(1.1rem, 4.2vw, 1.35rem);
+    font-weight: 500;
+    line-height: 1.45;
+    margin: 0;
+    text-align: left;
+    max-width: none;
+  }
+
+  .landing-hero__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 6px;
+  }
+
+  .landing-hero__actions .btn {
+    transform: none;
   }
 }

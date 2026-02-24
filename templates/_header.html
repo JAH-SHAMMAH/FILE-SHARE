@@ -1,72 +1,74 @@
-<header class="site-header">
-  <div class="container header-inner" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;min-height:54px;">
-    <a href="{{ url_for('index') }}" class="brand" style="flex:0 0 auto;">247FileShare</a>
-    {% set cu = request.state.current_user if request and request.state else None %}
-    {% if cu %}
-    <form class="header-search" action="{{ url_for('search') }}" method="get">
-      <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
-      <button type="submit">Search</button>
-    </form>
-    {% endif %}
-    <nav class="header-nav" style="flex:1 1 auto;display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;">
+<header class="site-header home-header">
+  {% set cu = request.state.current_user if request and request.state else None %}
+  <div class="container header-inner home-header__inner">
+    <div class="home-header__mobile-row" role="navigation" aria-label="Mobile header">
+      <a href="{{ url_for('index') }}" class="brand home-header__brand">247FileShare</a>
+      <a class="nav-link btn home-header__cta" href="{{ url_for('register') }}">Get started</a>
+    </div>
+
+    <div class="home-header__desktop-row" role="navigation" aria-label="Desktop header">
+      <a href="{{ url_for('index') }}" class="brand">247FileShare</a>
+
       {% if cu %}
-        <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
-        <a class="nav-link" href="/classes">Classes</a>
-        <a class="nav-link" href="/library">Library</a>
-        <a class="nav-link" href="/assignments">Assignments</a>
-        {% if cu.is_premium %}
-        <a class="nav-link" href="{{ url_for('premium_dashboard') }}">Premium</a>
-        {% else %}
-        <a class="nav-link" href="{{ url_for('premium_subscribe') }}">Go Premium</a>
-        {% endif %}
-        <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
-          <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
-        </button>
-        <div class="profile-menu">
-          <div class="profile-menu__head">
-              <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
-                <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
-              </button>
-            <div>
-              <div class="profile-menu__name">{{ cu.username }} {% set _role = cu.site_role|default('passerby') %}<span class="role-badge role-badge--{{ _role|lower }}" title="{{ _role|capitalize }}">★</span></div>
-              <div class="profile-menu__email">{{ cu.email or '' }}</div>
-              {% set invites = get_classroom_invites(cu) if cu else [] %}
-              {% if invites and invites|length > 0 %}
-                <div class="profile-menu__invites"><a href="/notifications">Classroom Invites ({{ invites|length }})</a></div>
-              {% endif %}
-            </div>
-          </div>
-          <a class="profile-menu__item" href="{{ url_for('profile_view', username=cu.username) }}">View Profile</a>
-          <a class="profile-menu__item" href="{{ url_for('bookmarks_view') }}">Saved</a>
-          <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
-          <a class="profile-menu__item" href="{{ url_for('account_settings_get') }}#role-settings">Role &amp; view</a>
-          <a class="profile-menu__item" href="/my/teachers">My Teachers</a>
-          {% if ADMIN_USERNAME and cu.username == ADMIN_USERNAME %}
-          <a class="profile-menu__item" href="{{ url_for('admin_import_page') }}">Admin: Import</a>
-          {% endif %}
-          {% if cu.is_premium %}
-          <a class="profile-menu__item" href="{{ url_for('premium_dashboard') }}">Premium Dashboard</a>
-          {% else %}
-          <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
-          {% endif %}
-          <a class="profile-menu__item" href="#settings">Account Settings</a>
-          <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
-          <div class="profile-menu__divider"></div>
-          <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
-        </div>
-      {% else %}
-        <div class="nav-links-right" style="display:flex;align-items:center;gap:10px;">
-          <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
-          <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
-        </div>
+      <form class="header-search" action="{{ url_for('search') }}" method="get">
+        <input name="q" placeholder="Search presentations" value="{{ request.query_params.get('q', '') }}">
+        <button type="submit">Search</button>
+      </form>
       {% endif %}
-        <!-- Language flag always at far right, never grows or wraps -->
-        <div class="lang-switcher" style="flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;min-width:0;">
-          <button class="lang-button" type="button" aria-haspopup="true" aria-expanded="false" style="background:none;border:none;padding:0;display:flex;align-items:center;gap:4px;">
-            <img class="lang-flag" id="lang-flag" alt="" src="{{ lang_flag_img }}" style="max-height:22px;width:auto;flex:0 0 auto;object-fit:contain;display:inline-block;" />
-            <span class="lang-code" id="lang-code" style="font-size:13px;font-weight:600;">{{ ui_lang|upper }}</span>
+
+      <nav class="header-nav">
+        {% if cu %}
+          <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
+          <a class="nav-link" href="/classes">Classes</a>
+          <a class="nav-link" href="/library">Library</a>
+          <a class="nav-link" href="/assignments">Assignments</a>
+          {% if cu.is_premium %}
+          <a class="nav-link" href="{{ url_for('premium_dashboard') }}">Premium</a>
+          {% else %}
+          <a class="nav-link" href="{{ url_for('premium_subscribe') }}">Go Premium</a>
+          {% endif %}
+          <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+            <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
           </button>
-        </div>
-    </nav>
+          <div class="profile-menu">
+            <div class="profile-menu__head">
+                <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
+                  <div class="avatar-badge">{{ cu.username[:2].upper() if cu.username else 'ME' }}</div>
+                </button>
+              <div>
+                <div class="profile-menu__name">{{ cu.username }} {% set _role = cu.site_role|default('passerby') %}<span class="role-badge role-badge--{{ _role|lower }}" title="{{ _role|capitalize }}">★</span></div>
+                <div class="profile-menu__email">{{ cu.email or '' }}</div>
+                {% set invites = get_classroom_invites(cu) if cu else [] %}
+                {% if invites and invites|length > 0 %}
+                  <div class="profile-menu__invites"><a href="/notifications">Classroom Invites ({{ invites|length }})</a></div>
+                {% endif %}
+              </div>
+            </div>
+            <a class="profile-menu__item" href="{{ url_for('profile_view', username=cu.username) }}">View Profile</a>
+            <a class="profile-menu__item" href="{{ url_for('bookmarks_view') }}">Saved</a>
+            <a class="profile-menu__item" href="{{ url_for('upload') }}">My Uploads</a>
+            <a class="profile-menu__item" href="{{ url_for('account_settings_get') }}#role-settings">Role &amp; view</a>
+            <a class="profile-menu__item" href="/my/teachers">My Teachers</a>
+            {% if ADMIN_USERNAME and cu.username == ADMIN_USERNAME %}
+            <a class="profile-menu__item" href="{{ url_for('admin_import_page') }}">Admin: Import</a>
+            {% endif %}
+            {% if cu.is_premium %}
+            <a class="profile-menu__item" href="{{ url_for('premium_dashboard') }}">Premium Dashboard</a>
+            {% else %}
+            <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
+            {% endif %}
+            <a class="profile-menu__item" href="#settings">Account Settings</a>
+            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
+            <div class="profile-menu__divider"></div>
+            <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
+          </div>
+        {% else %}
+          <div class="nav-links-right">
+            <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
+            <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
+          </div>
+        {% endif %}
+      </nav>
+    </div>
   </div>
 </header>
