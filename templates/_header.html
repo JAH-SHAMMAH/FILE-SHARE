@@ -1,6 +1,6 @@
 <header class="site-header">
-  <div class="container header-inner">
-    <a href="{{ url_for('index') }}" class="brand">247FileShare</a>
+  <div class="container header-inner" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;min-height:54px;">
+    <a href="{{ url_for('index') }}" class="brand" style="flex:0 0 auto;">247FileShare</a>
     {% set cu = request.state.current_user if request and request.state else None %}
     {% if cu %}
     <form class="header-search" action="{{ url_for('search') }}" method="get">
@@ -8,7 +8,7 @@
       <button type="submit">Search</button>
     </form>
     {% endif %}
-    <nav class="header-nav">
+    <nav class="header-nav" style="flex:1 1 auto;display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;">
       {% if cu %}
         <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
         <a class="nav-link" href="/classes">Classes</a>
@@ -55,11 +55,18 @@
           <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
         </div>
       {% else %}
-        <div class="nav-links-right">
+        <div class="nav-links-right" style="display:flex;align-items:center;gap:10px;">
           <a class="nav-link small" href="{{ url_for('upload') }}">Upload</a>
           <a class="nav-link btn" href="{{ url_for('register') }}">Get started</a>
         </div>
       {% endif %}
+        <!-- Language flag always at far right, never grows or wraps -->
+        <div class="lang-switcher" style="flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;min-width:0;">
+          <button class="lang-button" type="button" aria-haspopup="true" aria-expanded="false" style="background:none;border:none;padding:0;display:flex;align-items:center;gap:4px;">
+            <img class="lang-flag" id="lang-flag" alt="" src="{{ lang_flag_img }}" style="max-height:22px;width:auto;flex:0 0 auto;object-fit:contain;display:inline-block;" />
+            <span class="lang-code" id="lang-code" style="font-size:13px;font-weight:600;">{{ ui_lang|upper }}</span>
+          </button>
+        </div>
     </nav>
   </div>
 </header>

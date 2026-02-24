@@ -60,17 +60,15 @@
   <main class="page-shell">
     {% if not current_user %}
     <section class="landing-hero">
-      <div class="container hero-inner landing-grid">
-        <div class="hero-copy">
-          <h1 class="mega-title">
-            <span class="hl">Real files</span>
-            <span class="hl hl--soft">slides & ideas</span>
-          </h1>
-          <p class="muted lead">A cool place to share, read, and be enlightened.</p>
-          <div class="hero-actions">
-            <a class="btn" href="{{ url_for('register') }}">start your journey</a>
-            <a class="btn" href="{{ url_for('support_coffee') }}">buy me a cup of coffee</a>
-          </div>
+      <div class="hero-inner landing-grid" style="width:100%;padding:0 0 0 0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <h1 class="mega-title" style="width:100%;font-size:clamp(2.2rem,10vw,3.8rem);font-weight:900;line-height:1.05;letter-spacing:-0.02em;text-align:center;margin:0 0 10px 0;">
+          <span class="hl" style="display:block;font-size:inherit;font-weight:inherit;">Real files</span>
+          <span class="hl hl--soft" style="display:block;font-size:inherit;font-weight:inherit;">slides & ideas</span>
+        </h1>
+        <p class="muted lead" style="font-size:clamp(1.1rem,3.8vw,1.3rem);margin:0 0 18px 0;text-align:center;">A cool place to share, read, and be enlightened.</p>
+        <div class="hero-actions" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;width:100%;max-width:420px;margin:0 auto 0 auto;">
+          <a class="btn" href="{{ url_for('register') }}">start your journey</a>
+          <a class="btn" href="{{ url_for('support_coffee') }}">buy me a cup of coffee</a>
         </div>
       </div>
     </section>
