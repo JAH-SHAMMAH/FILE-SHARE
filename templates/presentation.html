@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container content-card presentation-detail presentation-viewer">
-  <div class="presentation-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-    <div>
+  <div class="presentation-header">
+    <div class="presentation-header__main">
       <!-- owner summary shown before title -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <a href="/users/{{ p.owner_username }}" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
@@ -24,31 +24,31 @@
           </div>
         </a>
       </div>
-      <h1>{{ p.title }}</h1>
+      <h1 class="presentation-title">{{ p.title }}</h1>
       {% if current_user and current_user.id == p.owner_id and (p.privacy or 'public') == 'private' %}
         <div class="muted" style="margin-top:4px;font-size:12px;font-weight:600;color:#b91c1c;">
           This presentation is <strong>private</strong> · only you can see it.
         </div>
       {% endif %}
-      <p class="muted presentation-short-desc" style="margin-top:8px;">{{ p.description or p.ai_description or '' }}</p>
-      <p class="muted" style="margin-top:6px;">
-        <strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations ·
-        <strong id="view-count">{{ p.views or 0 }}</strong> views ·
-        <strong>{{ p.downloads or 0 }}</strong> downloads ·
-        <strong>{{ likes or 0 }}</strong> likes
+      <p class="muted presentation-short-desc">{{ p.description or p.ai_description or '' }}</p>
+      <p class="muted presentation-stats-row">
+        <span><strong id="owner-count">{{ owner_presentation_count or 0 }}</strong> presentations</span>
+        <span><strong id="view-count">{{ p.views or 0 }}</strong> views</span>
+        <span><strong>{{ p.downloads or 0 }}</strong> downloads</span>
+        <span><strong>{{ likes or 0 }}</strong> likes</span>
       </p>
     </div>
-    <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto;">
+    <div class="presentation-header__actions">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         {% if original_url %}
           {% if current_user and current_user.id == p.owner_id or p.allow_download %}
             <div class="download-menu" data-download-menu>
               <button class="btn btn--download" type="button">Download ▾</button>
               <div class="download-menu__panel">
-                <a href="/presentations/{{ p.id }}/download?kind=original">Original file</a>
-                <a href="/presentations/{{ p.id }}/download?kind=pdf">Download PDF</a>
-                <a href="/presentations/{{ p.id }}/download?kind=images">Download images</a>
-                <a href="/presentations/{{ p.id }}/download?kind=slides">Save slides only</a>
+                <a href="/presentations/{{ p.id }}/download?kind=original" download>Original file</a>
+                <a href="/presentations/{{ p.id }}/download?kind=pdf" download>Download PDF</a>
+                <a href="/presentations/{{ p.id }}/download?kind=images" download>Download images</a>
+                <a href="/presentations/{{ p.id }}/download?kind=slides" download>Save slides only</a>
               </div>
             </div>
           {% endif %}
@@ -63,12 +63,6 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
               <button class="btn btn--ghost" type="submit">Use as template</button>
             </form>
-          {% endif %}
-          {% if current_user and current_user.id == p.owner_id %}
-          <form id="presentation-delete-form" method="post" action="/presentations/{{ p.id }}/delete" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <button id="presentation-delete-trigger" class="btn btn--ghost" type="button">Delete</button>
-          </form>
           {% endif %}
         {% endif %}
       </div>
@@ -96,8 +90,7 @@
   {% if current_user and current_user.id == p.owner_id %}
   <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
     <input id="presentation-music-input" placeholder="Paste Spotify/Apple/direct MP3 URL" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--border);" value="{{ p.music_url or '' }}" />
-    <button id="presentation-music-save" class="btn">Save</button>
-    <button id="presentation-music-clear" class="btn btn--ghost">Clear</button>
+    <button id="presentation-music-save" class="btn">Apply</button>
   </div>
   {% endif %}
   {% if p.music_url and 'spotify.com' in (p.music_url or '') %}
@@ -115,8 +108,7 @@
         <span class="like-btn__label">Like</span>
         <span id="like-count" class="like-btn__count">{{ likes or 0 }}</span>
       </button>
-      <button class="bookmark-btn btn {% if is_bookmarked %}bookmarked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_bookmarked else 'false' }}" title="Save for later">Save</button>
-      <button class="btn btn--ghost" id="save-to-collection" data-presentation-id="{{ p.id }}">Save to folder</button>
+      <button class="bookmark-btn btn {% if is_bookmarked %}bookmarked{% endif %}" data-id="{{ p.id }}" aria-pressed="{{ 'true' if is_bookmarked else 'false' }}" title="Save for later">Bookmark</button>
       <button class="btn btn--ghost btn-share" data-title="{{ p.title }}" data-id="{{ p.id }}" data-filename="{{ p.filename }}">Share</button>
       {% if p.music_url %}
         <button id="music-toggle-btn" class="btn btn--ghost" title="Show/hide presentation music">
@@ -172,9 +164,9 @@
 
   <div class="mobile-viewer-bar" id="mobile-viewer-bar" aria-label="Presentation quick actions">
     <button type="button" class="mobile-viewer-bar__action" id="mobile-gallery-open">Gallery</button>
-    <button type="button" class="mobile-viewer-bar__action" id="mobile-bookmark-action">Bookmark</button>
+    <button type="button" class="mobile-viewer-bar__action" id="mobile-bookmark-action">Save</button>
     <button type="button" class="mobile-viewer-bar__action" id="mobile-more-open">More</button>
-    <a class="mobile-viewer-bar__action" href="{{ viewer_url or original_url or '#' }}" id="mobile-download-link" download>Download</a>
+    <a class="mobile-viewer-bar__action" href="/presentations/{{ p.id }}/download?kind=original" id="mobile-download-link" download>Download</a>
   </div>
 
   <div class="mobile-slide-gallery" id="mobile-slide-gallery" aria-hidden="true">
@@ -200,11 +192,15 @@
 
   {% if current_user %}
   <button type="button" class="mobile-ai-fab" id="mobile-ai-fab" aria-label="Slide AI assistant">AI</button>
-  <div class="mobile-ai-quick" id="mobile-ai-quick" aria-hidden="true">
-    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="elaborate">Explain this slide</button>
-    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="key_points">Summarize this slide</button>
-    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="check_understanding">Ask me questions</button>
-    <button type="button" class="mobile-ai-quick__item" data-mobile-ai="open_chat">Open AI chat</button>
+  <div class="mobile-ai-sheet" id="mobile-ai-sheet" aria-hidden="true">
+    <button type="button" class="mobile-ai-sheet__backdrop" id="mobile-ai-sheet-close" aria-label="Close AI actions"></button>
+    <div class="mobile-ai-sheet__panel" role="dialog" aria-modal="true" aria-label="AI assistant actions">
+      <div class="mobile-ai-sheet__header">
+        <strong>AI Assistant</strong>
+        <button type="button" class="btn btn--ghost" id="mobile-ai-sheet-close-btn">Close</button>
+      </div>
+      <div class="mobile-ai-sheet__actions" id="mobile-ai-sheet-actions"></div>
+    </div>
   </div>
   {% endif %}
 
@@ -596,6 +592,197 @@
 
     .presentation-layout.presentation-layout--viewer .presentation-main-viewer .slide-image {
       max-height: none !important;
+    }
+  }
+
+  .presentation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .presentation-header__main {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .presentation-header__actions {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+  }
+
+  .presentation-short-desc {
+    margin-top: 8px;
+    color: #6b7280;
+  }
+
+  .presentation-stats-row {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+  }
+
+  .presentation-stats-row > span {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .mobile-ai-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 1410;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+
+  .mobile-ai-sheet.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mobile-ai-sheet__backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(2, 6, 23, .58);
+  }
+
+  .mobile-ai-sheet__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: min(90dvh, 760px);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface, #fff);
+    border-radius: 18px 18px 0 0;
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .mobile-ai-sheet__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .mobile-ai-sheet__actions {
+    display: grid;
+    gap: 8px;
+    overflow-y: auto;
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-ai-sheet__action {
+    width: 100%;
+    border: 1px solid var(--border, #e5e7eb);
+    background: #fff;
+    border-radius: 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text, #111827);
+  }
+
+  @media (max-width: 768px) {
+    .presentation-header {
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .presentation-header__actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .presentation-title {
+      font-size: 1.55rem;
+      line-height: 1.2;
+      margin-bottom: 0;
+      font-weight: 800;
+    }
+
+    .presentation-short-desc {
+      margin-top: 10px;
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+
+    .presentation-stats-row {
+      width: 100%;
+      gap: 8px 12px;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .mobile-viewer-bar__action {
+      min-height: 42px;
+      border-radius: 12px;
+      padding: 0 8px;
+    }
+
+    #ai-slide-container.ai-slide-container {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100vw;
+      height: 100dvh;
+      max-height: 100dvh;
+      border-radius: 16px 16px 0 0;
+      z-index: 1420;
+      transform: translateY(100%);
+    }
+
+    #ai-slide-container.ai-slide-container.is-open {
+      transform: translateY(0);
+    }
+
+    #ai-slide-container .ai-assistant-shell {
+      height: 100%;
+      min-height: 0;
+    }
+
+    #ai-slide-container .ai-slide-chat {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding-bottom: 6px;
+    }
+
+    #ai-slide-container .ai-slide-quick-actions {
+      flex: 0 0 auto;
+      overflow-x: auto;
+      white-space: nowrap;
+      display: flex;
+      flex-wrap: nowrap;
+    }
+
+    #ai-slide-container .ai-slide-input-bar {
+      position: sticky;
+      bottom: 0;
+      background: #fff;
+      padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    }
+
+    #ai-slide-container .ai-chat-row {
+      margin-bottom: 10px;
+    }
+
+    #ai-slide-container .ai-chat-bubble {
+      max-width: 88%;
+      padding: 10px 12px;
+      line-height: 1.5;
     }
   }
 </style>
@@ -1360,7 +1547,6 @@ function localAiTransform(action, text, audience){
 // Presentation music save/clear handlers
 (function(){
   const saveBtn = document.getElementById('presentation-music-save');
-  const clearBtn = document.getElementById('presentation-music-clear');
   const input = document.getElementById('presentation-music-input');
   const musicCard = document.getElementById('music-card');
   const musicToggle = document.getElementById('music-toggle-btn');
@@ -1434,16 +1620,6 @@ function localAiTransform(action, text, audience){
       buildMusicContent(url);
     }catch(e){ alert('Failed to save music'); }
   });
-  if(clearBtn){
-    clearBtn.addEventListener('click', async ()=>{
-      try{
-        const res = await fetch(`/presentations/{{ p.id }}/music`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ music_url: '' }) });
-        if(!res.ok) throw new Error('clear failed');
-        input.value = '';
-        buildMusicContent('');
-      }catch(e){ alert('Failed to clear music'); }
-    });
-  }
 })();
 
 // Delete presentation modal (owner only)
@@ -1609,36 +1785,57 @@ function localAiTransform(action, text, audience){
 
 (function(){
   const aiFab = document.getElementById('mobile-ai-fab');
-  const aiQuick = document.getElementById('mobile-ai-quick');
-  if(!aiFab || !aiQuick) return;
+  const aiSheet = document.getElementById('mobile-ai-sheet');
+  const aiSheetActions = document.getElementById('mobile-ai-sheet-actions');
+  const aiSheetClose = document.getElementById('mobile-ai-sheet-close');
+  const aiSheetCloseBtn = document.getElementById('mobile-ai-sheet-close-btn');
+  if(!aiFab || !aiSheet || !aiSheetActions) return;
 
-  aiFab.addEventListener('click', function(){
-    const open = aiQuick.classList.toggle('is-open');
-    aiQuick.setAttribute('aria-hidden', open ? 'false' : 'true');
-  });
+  function openSheet(){
+    aiSheet.classList.add('is-open');
+    aiSheet.setAttribute('aria-hidden', 'false');
+  }
 
-  aiQuick.addEventListener('click', function(event){
-    const trigger = event.target.closest('[data-mobile-ai]');
-    if(!trigger) return;
-    const action = trigger.getAttribute('data-mobile-ai');
-    aiQuick.classList.remove('is-open');
-    aiQuick.setAttribute('aria-hidden', 'true');
-    const menuItem = document.querySelector(`.ai-menu-item[data-ai-action="${action}"]`);
-    if(menuItem){
-      menuItem.click();
+  function closeSheet(){
+    aiSheet.classList.remove('is-open');
+    aiSheet.setAttribute('aria-hidden', 'true');
+  }
+
+  function buildSheetActions(){
+    const menuItems = Array.from(document.querySelectorAll('#ai-slide-menu .ai-menu-item'));
+    if(!menuItems.length){
+      aiSheetActions.innerHTML = '<div class="muted">AI actions unavailable.</div>';
       return;
     }
-    const aiButton = document.getElementById('ai-slide-btn');
-    if(aiButton){
-      aiButton.click();
-    }
+    aiSheetActions.innerHTML = '';
+    menuItems.forEach((item)=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mobile-ai-sheet__action';
+      btn.textContent = (item.textContent || '').trim();
+      btn.dataset.mobileAi = item.dataset.aiAction || '';
+      aiSheetActions.appendChild(btn);
+    });
+  }
+
+  buildSheetActions();
+
+  aiFab.addEventListener('click', function(){
+    openSheet();
   });
 
-  document.addEventListener('click', function(event){
-    if(aiQuick.contains(event.target) || aiFab.contains(event.target)) return;
-    aiQuick.classList.remove('is-open');
-    aiQuick.setAttribute('aria-hidden', 'true');
+  aiSheetActions.addEventListener('click', function(event){
+    const trigger = event.target.closest('.mobile-ai-sheet__action');
+    if(!trigger) return;
+    const action = trigger.getAttribute('data-mobile-ai');
+    const menuItem = document.querySelector(`.ai-menu-item[data-ai-action="${action}"]`);
+    if(menuItem) menuItem.click();
+    closeSheet();
   });
+
+  if(aiSheetClose) aiSheetClose.addEventListener('click', closeSheet);
+  if(aiSheetCloseBtn) aiSheetCloseBtn.addEventListener('click', closeSheet);
 })();
 </script>
 {% endblock %}
+

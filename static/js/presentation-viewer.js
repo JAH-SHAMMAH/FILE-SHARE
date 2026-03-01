@@ -451,23 +451,52 @@ class PresentationViewer {
 
   updateFullscreenUi() {
     if (!this.fullscreenBtn) return;
-    const active = document.fullscreenElement === this.viewerFrame;
+    const active = document.fullscreenElement === this.viewerFrame
+      || !!(this.viewerFrame && this.viewerFrame.classList.contains('viewer-inline-fullscreen'));
     this.fullscreenBtn.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
     this.fullscreenBtn.setAttribute('title', active ? 'Exit fullscreen' : 'Fullscreen');
     this.fullscreenBtn.classList.toggle('is-active', active);
   }
 
+  canUseNativeFullscreen() {
+    return !!(
+      this.viewerFrame &&
+      (this.viewerFrame.requestFullscreen
+        || this.viewerFrame.webkitRequestFullscreen
+        || this.viewerFrame.webkitEnterFullscreen)
+    );
+  }
+
+  applyInlineFullscreen(active) {
+    if (!this.viewerFrame) return;
+    this.viewerFrame.classList.toggle('viewer-inline-fullscreen', !!active);
+    document.body.classList.toggle('viewer-inline-fullscreen-open', !!active);
+  }
+
   async toggleFullscreen() {
-    if (!this.viewerFrame || !document.fullscreenEnabled) return;
+    if (!this.viewerFrame) return;
     try {
       if (document.fullscreenElement === this.viewerFrame) {
         await document.exitFullscreen();
-      } else {
-        await this.viewerFrame.requestFullscreen();
+        } else {
+        if (this.viewerFrame.requestFullscreen) {
+          await this.viewerFrame.requestFullscreen();
+        } else if (this.viewerFrame.webkitRequestFullscreen) {
+          this.viewerFrame.webkitRequestFullscreen();
+        } else if (this.viewerFrame.webkitEnterFullscreen) {
+          this.viewerFrame.webkitEnterFullscreen();
+        } else {
+          this.applyInlineFullscreen(true);
+        }
       }
     } catch (e) {
-      return;
+      if (this.viewerFrame.classList.contains('viewer-inline-fullscreen')) {
+        this.applyInlineFullscreen(false);
+      } else {
+        this.applyInlineFullscreen(true);
+      }
     }
+    this.updateFullscreenUi();
   }
 
   async fetchThumbnails() {
@@ -976,10 +1005,8 @@ class PresentationViewer {
     }
 
     if (this.fullscreenBtn) {
-      if (!document.fullscreenEnabled) {
-        this.fullscreenBtn.disabled = true;
-        this.fullscreenBtn.style.opacity = '0.5';
-        this.fullscreenBtn.style.cursor = 'not-allowed';
+      if (!document.fullscreenEnabled && !this.canUseNativeFullscreen()) {
+        this.fullscreenBtn.style.opacity = '0.9';
       }
       this.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
     }
@@ -1002,6 +1029,9 @@ class PresentationViewer {
       } else if (event.key === 'Escape') {
         if (document.fullscreenElement === this.viewerFrame) {
           document.exitFullscreen().catch(() => {});
+        } else if (this.viewerFrame && this.viewerFrame.classList.contains('viewer-inline-fullscreen')) {
+          this.applyInlineFullscreen(false);
+          this.updateFullscreenUi();
         }
       }
     });

@@ -22,6 +22,7 @@ import secrets
 from threading import Lock
 from collections import OrderedDict, deque
 from types import SimpleNamespace
+from typing import Dict, Optional
 from urllib.parse import quote, urlencode
 import re
 try:
@@ -5356,7 +5357,8 @@ def about_get(request: Request):
 
 @app.get('/help', response_class=HTMLResponse, name='help')
 def help_get(request: Request):
-    return templates.TemplateResponse('help.html', {'request': request})
+    # Keep legacy /help URLs working even when a dedicated help template is absent.
+    return RedirectResponse(url='/contact', status_code=status.HTTP_302_FOUND)
 
 
 @app.get('/contact', response_class=HTMLResponse, name='contact')
@@ -7593,34 +7595,57 @@ def set_presentation_music(presentation_id: int, payload: dict = Body(...), curr
     return {"ok": True, "music_url": pres.music_url}
 
 
+def _spotify_redirect_uri(request: Request) -> str:
+    return SPOTIFY_REDIRECT or str(request.url_for('spotify_callback'))
+
+
 @app.get('/auth/spotify/login')
 def spotify_login(request: Request, current_user: User = Depends(get_current_user)):
-    if not SPOTIFY_CLIENT_ID:
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail='Spotify not configured')
     scopes = 'streaming user-read-playback-state user-modify-playback-state user-read-email'
+    state = secrets.token_urlsafe(24)
     params = {
         'client_id': SPOTIFY_CLIENT_ID,
         'response_type': 'code',
-        'redirect_uri': SPOTIFY_REDIRECT,
+        'redirect_uri': _spotify_redirect_uri(request),
         'scope': scopes,
+        'state': state,
     }
     qs = '&'.join(f"{k}={quote(v)}" for k, v in params.items())
     url = f"https://accounts.spotify.com/authorize?{qs}"
-    return RedirectResponse(url)
+    response = RedirectResponse(url)
+    response.set_cookie(
+        key='spotify_oauth_state',
+        value=state,
+        httponly=True,
+        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        samesite=os.getenv("COOKIE_SAMESITE", "lax"),
+    )
+    return response
 
 
 @app.get('/auth/spotify/callback')
-def spotify_callback(request: Request, code: str = Query(None), error: str = Query(None), current_user: User = Depends(get_current_user)):
+def spotify_callback(
+    request: Request,
+    code: str = Query(None),
+    state: str = Query(None),
+    error: str = Query(None),
+    current_user: User = Depends(get_current_user),
+):
     if error:
         raise HTTPException(status_code=400, detail=f"Spotify error: {error}")
     if not code:
         raise HTTPException(status_code=400, detail='Missing code')
+    expected_state = request.cookies.get('spotify_oauth_state')
+    if expected_state and state != expected_state:
+        raise HTTPException(status_code=400, detail='Invalid Spotify authorization state')
     # Exchange code for tokens
     token_url = 'https://accounts.spotify.com/api/token'
     data = {
         'grant_type': 'authorization_code',
         'code': code,
-        'redirect_uri': SPOTIFY_REDIRECT,
+        'redirect_uri': _spotify_redirect_uri(request),
     }
     auth = base64.b64encode(f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()).decode()
     headers = {'Authorization': f'Basic {auth}', 'Content-Type': 'application/x-www-form-urlencoded'}
@@ -7632,19 +7657,24 @@ def spotify_callback(request: Request, code: str = Query(None), error: str = Que
         raise HTTPException(status_code=500, detail=f'Failed to exchange token: {e}')
     refresh = payload.get('refresh_token')
     access = payload.get('access_token')
-    if not refresh:
-        raise HTTPException(status_code=500, detail='No refresh token returned')
+    if not refresh and not access:
+        raise HTTPException(status_code=500, detail='No Spotify token returned')
     # persist refresh token on user
     with Session(engine) as session:
         u = session.get(User, current_user.id)
-        u.spotify_refresh_token = refresh
+        if refresh:
+            u.spotify_refresh_token = refresh
         session.add(u)
         session.commit()
-    return RedirectResponse(url='/')
+    response = RedirectResponse(url='/account/settings')
+    response.delete_cookie('spotify_oauth_state')
+    return response
 
 
 def _refresh_spotify_token_for_user(u: User):
     if not u or not getattr(u, 'spotify_refresh_token', None):
+        return None
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         return None
     token_url = 'https://accounts.spotify.com/api/token'
     data = {'grant_type': 'refresh_token', 'refresh_token': u.spotify_refresh_token}
@@ -7672,7 +7702,11 @@ def spotify_token(request: Request, current_user: User = Depends(get_current_use
 
 
 @app.get("/api/presentations/{presentation_id}/preview")
-def presentation_preview(presentation_id: int):
+def presentation_preview(
+    presentation_id: int,
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     with Session(engine) as session:
         p = session.get(Presentation, presentation_id)
         if not p:
@@ -7734,12 +7768,22 @@ def presentation_preview(presentation_id: int):
             else:
                 conversion_status = "unsupported"
 
+    owner_username = None
+    with Session(engine) as session:
+        if getattr(p, "owner_id", None):
+            owner = session.get(User, p.owner_id)
+            owner_username = getattr(owner, "username", None) if owner else None
+
     return {
         "id": p.id,
         "title": p.title,
+        "description": (getattr(p, "description", None) or getattr(p, "ai_description", None) or ""),
         "viewer_url": viewer_url,
         "original_url": original_url,
         "conversion_status": conversion_status,
+        "owner_id": getattr(p, "owner_id", None),
+        "owner_username": owner_username,
+        "is_owned_by_current_user": bool(current_user and current_user.id == getattr(p, "owner_id", None)),
     }
 
 
@@ -8123,7 +8167,9 @@ def get_converted_pdf(presentation_id: int, inline: bool = Query(False)):
         )
 
     return FileResponse(
-        pdf_path, media_type="application/pdf", filename=pdf_path.name
+        str(pdf_path),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename=\"{pdf_path.name}\""},
     )
 
 
@@ -8186,7 +8232,12 @@ def download_presentation_variant(
                 session.commit()
             except Exception:
                 session.rollback()
-            return FileResponse(tmp.name, media_type="application/zip", filename=f"presentation_{presentation_id}_slides.zip")
+            zip_name = f"presentation_{presentation_id}_slides.zip"
+            return FileResponse(
+                tmp.name,
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f"attachment; filename=\"{zip_name}\""},
+            )
 
         if kind == "pdf":
             pdf_path = None
@@ -8210,12 +8261,31 @@ def download_presentation_variant(
                 session.commit()
             except Exception:
                 session.rollback()
-            return FileResponse(str(pdf_path), media_type="application/pdf", filename=pdf_path.name)
+            safe_pdf = Path(pdf_path).name
+            return FileResponse(
+                str(pdf_path),
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f"attachment; filename=\"{safe_pdf}\""},
+            )
 
         # default: original
         if not p.filename:
             raise HTTPException(status_code=404, detail="File not found")
-        return RedirectResponse(url=f"/download/{p.filename}", status_code=302)
+        original_path = Path(UPLOAD_DIR) / p.filename
+        if not original_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        try:
+            p.downloads = int(getattr(p, "downloads", 0) or 0) + 1
+            session.add(p)
+            session.commit()
+        except Exception:
+            session.rollback()
+        safe_name = Path(p.filename).name
+        return FileResponse(
+            str(original_path),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename=\"{safe_name}\""},
+        )
 
 
 @app.api_route("/download/{filename}", methods=["GET", "HEAD", "OPTIONS"])
@@ -8315,7 +8385,7 @@ def download_file(request: Request, filename: str, inline: bool = Query(False)):
                 return StreamingResponse(
                     file_stream(path, start, length),
                     status_code=206,
-                    media_type=guessed_type,
+                    media_type=guessed_type if inline else "application/octet-stream",
                     headers=headers,
                 )
         except Exception:
@@ -10115,20 +10185,11 @@ def messages_page(request: Request, current_user: User = Depends(get_current_use
 
 @app.get("/premium/subscribe", response_class=HTMLResponse)
 async def premium_subscribe(request: Request, current_user: User = Depends(get_current_user)):
-    # Render a Paystack-powered subscribe page
-    error = None
-    if not PAYSTACK_PUBLIC_KEY:
-        error = "Paystack not configured. Set PAYSTACK_PUBLIC_KEY and PAYSTACK_SECRET_KEY."
-    amount_major = PAYSTACK_AMOUNT_KOBO / 100
     return templates.TemplateResponse(
-        "subscribe.html",
+        "premium_coming_soon.html",
         {
             "request": request,
-            "paystack_public_key": PAYSTACK_PUBLIC_KEY,
-            "amount": amount_major,
-            "amount_kobo": PAYSTACK_AMOUNT_KOBO,
-            "currency": PAYSTACK_CURRENCY,
-            "error": error,
+            "current_user": current_user,
         },
     )
 

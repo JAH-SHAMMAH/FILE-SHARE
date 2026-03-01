@@ -11,6 +11,13 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function qs(sel, el) { return (el||document).querySelector(sel); }
   function qsa(sel, el) { return (el||document).querySelectorAll(sel); }
+  function autoResizeChatInput(){
+    const el = qs('#chat-input');
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(Math.max(el.scrollHeight, 52), 180);
+    el.style.height = next + 'px';
+  }
 
   function openModal(userId, username){
     otherId = userId || null;
@@ -100,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function(){
     } catch (err) { /* ignore */ }
     connectSocket();
     loadHistory();
+    autoResizeChatInput();
     qs('#chat-input').focus();
   }
 
@@ -551,6 +559,7 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 
   qs('#chat-input')?.addEventListener('input', function(){
+    autoResizeChatInput();
     if (!otherId || !socket || socket.readyState !== 1) return;
     if (!isTyping){
       isTyping = true;
@@ -570,6 +579,9 @@ document.addEventListener('DOMContentLoaded', function(){
       try{ socket.send(JSON.stringify({ action: 'typing', to: otherId, status: 'stop' })); }catch(e){}
     }
   });
+
+  // initialize sizing when script loads
+  autoResizeChatInput();
 
   // support submitting when recipient input supplied and otherId not set
   qs('#chat-recipient')?.addEventListener('change', function(ev){

@@ -598,14 +598,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     refreshNotifBadge();
   };
-  // When the bell is clicked, take user to the full notifications page.
+  // Bell behavior: open notifications panel modal (no redirect).
   const notifLauncher = document.getElementById('notif-launcher');
   if (notifLauncher) {
-    notifLauncher.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      // go straight to the dedicated notifications page
-      window.location.href = '/notifications';
-    });
+    notifLauncher.addEventListener('click', openNotifPanel);
   }
   document.addEventListener('click', function(ev){
     if (ev.defaultPrevented) return;
@@ -1604,40 +1600,85 @@ document.addEventListener('DOMContentLoaded', function(){
   const menu = document.getElementById('hamburger-menu');
   if (!btn || !menu) return;
 
-  const closeMenu = () => {
-    menu.classList.remove('is-open');
-    menu.setAttribute('aria-hidden', 'true');
-    btn.setAttribute('aria-expanded', 'false');
+  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  let isOpen = false;
+
+  const getFocusableItems = () => (
+    Array.from(menu.querySelectorAll(focusableSelector))
+      .filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true')
+  );
+
+  const setMenuState = (open) => {
+    isOpen = open;
+    menu.classList.toggle('is-open', open);
+    menu.setAttribute('aria-hidden', open ? 'false' : 'true');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.body.classList.toggle('menu-open', open);
+  };
+
+  const closeMenu = (restoreFocus = true) => {
+    if (!isOpen) {
+      setMenuState(false);
+      return;
+    }
+    setMenuState(false);
+    if (restoreFocus) btn.focus();
   };
 
   const openMenu = () => {
-    menu.classList.add('is-open');
-    menu.setAttribute('aria-hidden', 'false');
-    btn.setAttribute('aria-expanded', 'true');
+    if (isOpen) return;
+    setMenuState(true);
+    const items = getFocusableItems();
+    (items[0] || menu).focus();
   };
 
   btn.addEventListener('click', function(){
-    const expanded = btn.getAttribute('aria-expanded') === 'true';
-    if (expanded) closeMenu();
+    if (isOpen) closeMenu(true);
     else openMenu();
   });
 
   // close when clicking outside
   document.addEventListener('click', function(ev){
+    if (!isOpen) return;
     if (!menu.contains(ev.target) && !btn.contains(ev.target)){
-      closeMenu();
+      closeMenu(true);
     }
   });
 
   document.addEventListener('keydown', function(ev){
-    if (ev.key === 'Escape') closeMenu();
+    if (!isOpen) return;
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closeMenu(true);
+      return;
+    }
+    if (ev.key !== 'Tab') return;
+    const items = getFocusableItems();
+    if (!items.length) {
+      ev.preventDefault();
+      menu.focus();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (ev.shiftKey && (active === first || active === menu)) {
+      ev.preventDefault();
+      last.focus();
+      return;
+    }
+    if (!ev.shiftKey && active === last) {
+      ev.preventDefault();
+      first.focus();
+    }
   });
 
   window.addEventListener('resize', function(){
-    if (window.innerWidth > 768) {
-      closeMenu();
-    }
+    if (window.innerWidth > 768) closeMenu(false);
   });
+
+  if (!menu.hasAttribute('tabindex')) menu.setAttribute('tabindex', '-1');
+  setMenuState(false);
 });
 
 // Hover preview: fetch up to 4 thumbnails and show a popup

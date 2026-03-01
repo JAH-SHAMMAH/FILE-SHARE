@@ -16,14 +16,14 @@
 <body class="{% if request.state.current_user and request.state.current_user.site_role == 'teacher' %}role-teacher{% endif %}">
   <header class="site-header">
     <div class="container header-inner">
-      <div class="header-left" style="display:flex;align-items:center;gap:12px;">
+      <div class="header-left">
         <a href="{{ url_for('index') }}" class="brand">
           <span class="brand-text">247FileShare</span>
         </a>
       </div>
 
       <nav class="header-nav">
-        <div class="nav-cta" style="display:flex;align-items:center;gap:10px;">
+        <div class="nav-cta">
           {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f310.svg' %}
           {% if ui_lang == 'en' %}
             {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1fa-1f1f8.svg' %}
@@ -44,7 +44,7 @@
           {% elif ui_lang == 'ja' %}
             {% set lang_flag_img = 'https://twemoji.maxcdn.com/v/latest/svg/1f1ef-1f1f5.svg' %}
           {% endif %}
-          <div class="nav-link small lang-switcher" id="lang-switcher" title="Language" style="position:relative;">
+          <div class="nav-link small lang-switcher" id="lang-switcher" title="Language">
             <button class="lang-button" type="button" aria-haspopup="true" aria-expanded="false">
               <img class="lang-flag" id="lang-flag" alt="" src="{{ lang_flag_img }}" />
               <span class="lang-code" id="lang-code">{{ ui_lang|upper }}</span>
@@ -190,7 +190,7 @@
             {% endif %}
             <a class="nav-link" href="{{ url_for('messages_page') }}">
               {{ t_messages }}
-              <span id="messages-badge" style="display:none;margin-left:4px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;">0</span>
+              <span id="messages-badge" class="messages-badge">0</span>
             </a>
           {% else %}
             <a class="nav-link" href="{{ url_for('about') }}">About us</a>
@@ -208,7 +208,7 @@
             <span class="header-profile-name">{{ request.state.current_user.username }}</span>
             <div class="avatar-badge">{{ request.state.current_user.username[:2].upper() if request.state.current_user.username else 'ME' }}</div>
           </button>
-          <button id="notif-launcher" class="icon-btn" title="Notifications" style="position:relative;margin-left:6px">🔔<span id="notif-badge" style="position:absolute;right:-6px;top:-6px;background:#ff3b30;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px;display:none">0</span></button>
+          <button id="notif-launcher" class="icon-btn notif-launcher" title="Notifications">🔔<span id="notif-badge" class="notif-badge">0</span></button>
           <div class="profile-menu">
             <div class="profile-menu__head">
               <button class="profile-trigger avatar-button" type="button" aria-haspopup="true" aria-expanded="false" title="Open profile menu">
@@ -231,12 +231,12 @@
             <a class="profile-menu__item" href="{{ url_for('premium_subscribe') }}">Upgrade to Premium</a>
             {% endif %}
             {% if request.state.current_user.spotify_refresh_token %}
-            <div class="profile-menu__item" style="cursor:default">Spotify connected</div>
+            <div class="profile-menu__item profile-menu__item--static">Spotify connected</div>
             {% else %}
             <a class="profile-menu__item" href="{{ url_for('spotify_login') }}">Connect Spotify</a>
             {% endif %}
             <a class="profile-menu__item" href="{{ url_for('account_settings_get') }}">Account Settings</a>
-            <a class="profile-menu__item" href="{{ url_for('help') }}">Support</a>
+            <a class="profile-menu__item" href="{{ url_for('contact') }}">Support</a>
             <div class="profile-menu__divider"></div>
             <a class="profile-menu__item" href="{{ url_for('logout') }}">Logout</a>
           </div>
@@ -256,6 +256,7 @@
                 <li><a href="{{ url_for('teacher_dashboard') }}">{{ t_teaching }}</a></li>
                 {% endif %}
                 <li><a href="{{ url_for('messages_page') }}">{{ t_messages }}</a></li>
+                <li><a href="{{ url_for('notifications_page') }}">Notifications</a></li>
                 {% else %}
                 <li><a href="{{ url_for('about') }}">About us</a></li>
                 <li><a href="{{ url_for('upload') }}">{{ t_upload }}</a></li>
@@ -284,8 +285,8 @@
   {# Global category chips under the header, only on Featured page #}
   {% set current_path = request.url.path if request and request.url else '' %}
   {% if request.state.categories and current_path == '/featured' %}
-  <section class="container category-bar" style="margin-top:8px;">
-    <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:nowrap;">
+  <section class="container category-bar category-bar--featured">
+    <div class="category-bar__row">
       {% set removed_cats = ['for you','business','mobile','marketing','technology','school','society'] %}
       {% set suggested = ['For You'] %}
       {% set suggested_lower = suggested | map('lower') | list %}
@@ -303,21 +304,23 @@
         {% endfor %}
       </div>
       {% endif %}
-      <div style="display:flex;align-items:center;justify-content:flex-start;gap:12px;">
+      <div class="category-bar__controls">
         <div id="category-scroll" class="category-scroll" role="list">
-          {% set ns = namespace(seen=[]) %}
-          {% set visible_limit = 2 %}
+          {% set ns = namespace(seen=[], idx=0) %}
+          {% set visible_limit = 6 %}
           {% for c in request.state.categories or [] %}
             {% set c_lower = c|lower %}
             {% if c_lower not in suggested_lower and c_lower not in removed_cats and c_lower not in ns.seen %}
               {% set is_active = (c == request.query_params.get('category')) %}
-              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if is_active %} active{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
+              {% set is_extra = ns.idx >= visible_limit %}
+              <a role="listitem" data-cat="{{ c }}" class="category-chip{% if is_active %} active{% endif %}{% if is_extra %} category-chip--extra{% endif %}" href="/search?category={{ c|url_encode }}">{{ c }}</a>
+              {% set ns.idx = ns.idx + 1 %}
               {% set _ = ns.seen.append(c_lower) %}
             {% endif %}
           {% endfor %}
         </div>
         {% if ns.seen|length > visible_limit %}
-          <button id="toggle-all-categories" type="button" class="btn btn--ghost" style="padding:0;border:none;background:transparent;text-decoration:underline;">Show all categories</button>
+          <button id="toggle-all-categories" type="button" class="btn btn--ghost category-toggle-link">Show all categories</button>
         {% endif %}
       </div>
     </div>
@@ -329,7 +332,25 @@
         const categoryScroll = document.getElementById('category-scroll');
         if (!toggleBtn || !categoryBar || !categoryScroll) return;
       let expanded = false;
+      const desktopQuery = window.matchMedia('(min-width: 769px)');
+      function syncToggleVisibility(){
+        if (desktopQuery.matches) {
+          toggleBtn.style.display = '';
+          return;
+        }
+        categoryBar.classList.remove('is-expanded');
+        expanded = false;
+        toggleBtn.textContent = 'Show all categories';
+        toggleBtn.style.display = 'none';
+      }
+      syncToggleVisibility();
+      try{
+        desktopQuery.addEventListener('change', syncToggleVisibility);
+      }catch(_e){
+        window.addEventListener('resize', syncToggleVisibility);
+      }
       toggleBtn.addEventListener('click', function () {
+        if (!desktopQuery.matches) return;
         expanded = !expanded;
           categoryBar.classList.toggle('is-expanded', expanded);
         toggleBtn.textContent = expanded ? 'Show fewer categories' : 'Show all categories';
@@ -338,7 +359,7 @@
   </script>
   {% endif %}
 
-  <main class="container" style="padding: var(--space-lg) 0;">
+  <main class="container page-main">
     {% block content %}{% endblock %}
   </main>
 
@@ -371,33 +392,33 @@
   {% endif %}
   {% if request.state.current_user %}
   <!-- Notification panel -->
-  <div id="notif-panel" class="chat-modal" style="display:none;">
+  <div id="notif-panel" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
-    <div class="chat-modal__panel" style="width:360px;max-width:calc(100% - 24px);">
+    <div class="chat-modal__panel notif-panel__panel">
       <header class="chat-header">
         <div class="chat-header__title">Notifications</div>
-          <a href="{{ url_for('notifications_page') }}" class="btn btn--ghost" style="padding:4px 10px;font-size:13px;">Open page</a>
+          <a href="{{ url_for('notifications_page') }}" class="btn btn--ghost notif-open-page-btn">Open page</a>
           <button id="notif-close" class="icon-btn" aria-label="Close notifications">✕</button>
       </header>
-      <div id="notif-list" style="max-height:420px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;">
+      <div id="notif-list" class="notif-list">
         <!-- notifications loaded via JS -->
       </div>
-      <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
+      <div class="notif-panel__actions">
         <button id="notif-mark-all" class="btn btn--ghost">Mark all read</button>
       </div>
     </div>
   </div>
 
   <!-- Global Chat modal -->
-  <div id="chat-modal" class="chat-modal" style="display:none;">
+  <div id="chat-modal" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
     <div class="chat-modal__panel">
       <header class="chat-header">
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="chat-header__identity">
           <div id="chat-avatar" class="contact-avatar">??</div>
           <div class="chat-header__title" id="chat-username">User</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="chat-header__actions">
           <button id="chat-theme-toggle" class="icon-btn" title="Coffee mode">☕ Coffee</button>
           <button id="chat-clear" class="icon-btn" title="Clear chat">🗑</button>
           <button id="chat-audio-call" class="icon-btn" title="Audio call">🎧</button>
@@ -405,29 +426,29 @@
           <button id="chat-close" class="icon-btn">✕</button>
         </div>
       </header>
-      <div id="chat-recipient-block" style="padding:10px;border-bottom:1px solid var(--border);">
+      <div id="chat-recipient-block" class="chat-recipient-block">
         <label for="chat-recipient" class="muted">Recipient user id (or select from people you follow):</label>
-        <input id="chat-recipient" type="text" placeholder="User id (e.g. 42)" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid var(--border);" />
-        <div style="margin-top:8px;">
-          <label style="font-size:0.9em;color:var(--muted);"><input id="chat-mutuals-only" type="checkbox" style="margin-right:6px;"/> Mutuals only</label>
-          <select id="chat-recipient-select" style="width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid var(--border);display:none"></select>
+        <input id="chat-recipient" class="chat-recipient-input" type="text" placeholder="User id (e.g. 42)" />
+        <div class="chat-recipient-controls">
+          <label class="chat-mutuals-label"><input id="chat-mutuals-only" class="chat-mutuals-checkbox" type="checkbox" /> Mutuals only</label>
+          <select id="chat-recipient-select" class="chat-recipient-select"></select>
           <div id="chat-recipient-list" class="chat-recipient-list"></div>
         </div>
       </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chat-status">
-        <div id="chat-typing" class="chat-typing" style="display:none;"></div>
+        <div id="chat-typing" class="chat-typing chat-typing--hidden"></div>
         <div id="chat-read-state" class="chat-read"></div>
       </div>
       <form id="chat-form" class="chat-form" enctype="multipart/form-data">
-        <input id="chat-input" type="text" placeholder="Write a message..." autocomplete="off" />
-        <button class="btn" type="submit">Send</button>
+        <textarea id="chat-input" rows="2" placeholder="Write a message..." autocomplete="off"></textarea>
+        <button class="btn chat-send-btn" type="submit">Send</button>
       </form>
     </div>
   </div>
 
   <!-- Direct call modal -->
-  <div id="direct-call-modal" class="chat-modal" style="display:none;">
+  <div id="direct-call-modal" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
     <div class="chat-modal__panel direct-call-panel">
       <header class="chat-header">
@@ -435,7 +456,7 @@
         <button id="direct-call-close" class="icon-btn">✕</button>
       </header>
       <div class="direct-call-body">
-        <div id="direct-call-status" class="muted" style="margin-bottom:10px;">Connecting...</div>
+        <div id="direct-call-status" class="muted direct-call-status">Connecting...</div>
         <div class="direct-call-videos">
           <video id="direct-call-remote" autoplay playsinline></video>
           <video id="direct-call-local" autoplay playsinline muted></video>
@@ -450,7 +471,7 @@
   </div>
 
   <!-- Space meeting modal -->
-  <div id="space-meeting-modal" class="chat-modal" style="display:none;">
+  <div id="space-meeting-modal" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
     <div class="chat-modal__panel space-meeting-panel">
       <header class="chat-header">
@@ -474,19 +495,19 @@
   </div>
   {% endif %}
   <!-- current user marker for client-side scripts -->
-  <div id="current-user" data-my-id="{{ request.state.current_user.id if request.state.current_user else '' }}" style="display:none"></div>
+  <div id="current-user" class="current-user-meta" data-my-id="{{ request.state.current_user.id if request.state.current_user else '' }}"></div>
 
   <!-- Sign-in prompt modal (shown to anonymous users when they click Contact Owner) -->
-  <div id="signin-modal" class="chat-modal" style="display:none;">
+  <div id="signin-modal" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
     <div class="chat-modal__panel">
       <header class="chat-header">
         <div class="chat-header__title">Sign in to message</div>
         <button id="signin-close" class="icon-btn">✕</button>
       </header>
-      <div style="padding:16px;">
+      <div class="signin-modal__body">
         <p class="muted">You need to sign in to use direct messaging. You can sign in or contact the owner by email.</p>
-        <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="signin-modal__actions">
           <a class="btn" id="signin-login" href="{{ url_for('login') }}">Sign in</a>
           <a class="btn btn--ghost" id="signin-register" href="{{ url_for('register') }}">Register</a>
           <a class="btn btn--ghost" id="signin-mailto" href="#">Contact by email</a>
@@ -495,11 +516,11 @@
     </div>
   </div>
   <!-- Contact Owner modal for signed-in users (chat-style composer) -->
-  <div id="contact-modal" class="chat-modal" style="display:none;">
+  <div id="contact-modal" class="chat-modal modal-hidden">
     <div class="chat-modal__backdrop"></div>
     <div class="chat-modal__panel contact-panel">
       <header class="chat-header contact-header">
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="contact-header__identity">
           <div id="contact-owner-avatar" class="contact-avatar">??</div>
           <div>
             <div id="contact-owner-title" class="contact-title">Contact owner</div>
@@ -522,13 +543,13 @@
           <textarea id="contact-message" name="message" rows="2" placeholder="Write your message…" required></textarea>
           <button type="submit" class="btn">Send</button>
         </form>
-        <div id="contact-status" class="muted" style="margin:4px 16px 10px; display:none;"></div>
-        <button type="button" id="contact-cancel" class="btn btn--ghost" style="margin:0 16px 14px auto;">Cancel</button>
+        <div id="contact-status" class="muted contact-status contact-status--hidden"></div>
+        <button type="button" id="contact-cancel" class="btn btn--ghost contact-cancel">Cancel</button>
       </div>
     </div>
   </div>
   <!-- Toast container for UI feedback -->
-  <div id="toast-container" aria-live="polite" aria-atomic="true" style="position:fixed;right:16px;bottom:18px;z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
   <script src="{{ request.url_for('static', path='js/video_calls.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

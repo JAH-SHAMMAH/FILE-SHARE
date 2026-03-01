@@ -1,6 +1,68 @@
 {% extends "base.html" %}
 {% block head %}
 <style>
+  .profile-header {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .profile-avatar-wrap {
+    width: 120px;
+    height: 120px;
+    border-radius: 999px;
+    overflow: hidden;
+    flex: 0 0 120px;
+  }
+
+  .profile-avatar-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 999px;
+  }
+
+  .profile-avatar-initials {
+    width: 120px;
+    height: 120px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 32px;
+    color: #1f1f3f;
+    background: linear-gradient(135deg,#eef1ff,#ffd9a8);
+  }
+
+  .profile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 768px) {
+    .profile-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .profile-header-actions {
+      width: 100%;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .profile-header-actions .btn {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 10px;
+    }
+  }
+
   .profile-page--public #presentations .scroll-row__track > article.card,
   .profile-page--public #likes .scroll-row__track > article.card {
     min-width: 200px;
@@ -64,20 +126,20 @@
 {% endblock %}
 {% block content %}
 <div class="container content-card profile-page{% if request.url.path.startswith('/users/') %} profile-page--public{% endif %}">
-    <div class="profile-header" style="display:flex;gap:16px;align-items:center" data-username="{{ user_obj.username }}">
+    <div class="profile-header" data-username="{{ user_obj.username }}">
     <div class="avatar">
       {% set initials = (user_obj.username or '??')[:2].upper() %}
       {% if user_obj.avatar %}
-      <a href="/download/{{ user_obj.avatar }}?inline=1" target="_blank" title="Open avatar image">
-        <img src="/download/{{ user_obj.avatar }}?inline=1" alt="avatar" style="width:120px;height:120px;border-radius:12px" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      <a href="/download/{{ user_obj.avatar }}?inline=1" class="profile-avatar-wrap" title="Open avatar image">
+        <img src="/download/{{ user_obj.avatar }}?inline=1" alt="avatar" onerror="this.style.display='none'; this.parentElement.nextElementSibling.style.display='flex';" />
       </a>
       {% endif %}
-      <div class="avatar-fallback" style="width:120px;height:120px;border-radius:12px;display:{% if user_obj.avatar %}none{% else %}flex{% endif %};align-items:center;justify-content:center;font-weight:800;font-size:32px;color:#1f1f3f;background:linear-gradient(135deg,#eef1ff,#ffd9a8);">
+      <div class="avatar-fallback profile-avatar-initials" style="display:{% if user_obj.avatar %}none{% else %}flex{% endif %};">
         {{ initials }}
       </div>
     </div>
     <div>
-      <div style="display:flex;align-items:center;gap:12px">
+      <div class="profile-header-actions">
         <h2 style="margin:0">
           {{ user_obj.full_name or user_obj.username }}
           {% if user_obj.site_role %}

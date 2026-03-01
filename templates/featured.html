@@ -86,8 +86,15 @@
     <div class="preview-actions">
       <div class="muted" id="featured-modal-status"></div>
       <div>
+        <button class="btn btn--ghost" id="featured-modal-fullscreen" type="button">Fullscreen</button>
+        <button class="btn btn--ghost btn-message" id="featured-modal-contact" type="button" data-bypass="1" style="display:none;">Contact Owner</button>
+        <form id="featured-modal-template-form" method="post" style="display:none;">
+          <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}" />
+          <button class="btn btn--ghost" id="featured-modal-template-btn" type="submit">Use as template</button>
+        </form>
         <a class="btn" id="featured-modal-download" href="#" download>Download</a>
-        <a class="btn btn--ghost" id="featured-modal-open-original" href="#" target="_blank">Open original</a>
+        <a class="btn btn--ghost" id="featured-modal-open-original" href="#">Open original</a>
+        <a class="btn btn--ghost" id="featured-modal-add-song" href="#">Add song</a>
       </div>
     </div>
   </div>
@@ -107,6 +114,13 @@
     const downloadBtn = document.getElementById('featured-modal-download');
     const openOriginalBtn = document.getElementById('featured-modal-open-original');
     const statusEl = document.getElementById('featured-modal-status');
+    const fullscreenBtn = document.getElementById('featured-modal-fullscreen');
+    const contactBtn = document.getElementById('featured-modal-contact');
+    const addSongBtn = document.getElementById('featured-modal-add-song');
+    const templateForm = document.getElementById('featured-modal-template-form');
+    const templateBtn = document.getElementById('featured-modal-template-btn');
+    let activeOwnerId = null;
+    let activeOwnerUsername = '';
 
     async function fetchThumbnails(id){
       try{
@@ -124,6 +138,8 @@
       titleEl.textContent = title || 'Preview';
       downloadBtn.href = originalUrl || '#';
       openOriginalBtn.href = originalUrl || '#';
+      addSongBtn.href = `/presentations/${id}`;
+      if (templateForm) templateForm.action = `/presentations/${id}/template`;
       showModalUI();
       statusEl.textContent = 'Loading thumbnails...';
       const thumbs = await fetchThumbnails(id);
@@ -135,7 +151,6 @@
         link.className='btn';
         link.href = originalUrl || '#';
         link.textContent = 'Download / Open original';
-        link.target = '_blank';
         mainEl.appendChild(link);
         return;
       }
@@ -181,19 +196,64 @@
         ev.preventDefault();
         ev.stopPropagation();
         // try to get metadata from server for title + description
-        fetch(`/api/presentations/${pid}`).then(r=>r.json()).then(meta=>{
+        fetch(`/api/presentations/${pid}/preview`).then(r=>r.json()).then(meta=>{
           document.getElementById('featured-modal-desc').textContent = meta.description || '';
-          const owner = meta.owner_username ? (meta.owner_username + (meta.owner_id ? (' • ' + meta.owner_id) : '')) : '';
+          const owner = meta.owner_username ? (meta.owner_username + (meta.owner_id ? (' - #' + meta.owner_id) : '')) : '';
           document.getElementById('featured-modal-meta').textContent = owner;
+          activeOwnerId = meta.owner_id || null;
+          activeOwnerUsername = meta.owner_username || '';
+          if (contactBtn) {
+            if (activeOwnerId) {
+              contactBtn.style.display = '';
+              contactBtn.setAttribute('data-user-id', String(activeOwnerId));
+              contactBtn.setAttribute('data-username', activeOwnerUsername);
+            } else {
+              contactBtn.style.display = 'none';
+            }
+          }
+          if (templateForm && templateBtn) {
+            const owned = !!meta.is_owned_by_current_user;
+            templateForm.style.display = owned ? 'none' : 'inline';
+            templateBtn.disabled = owned;
+          }
           document.getElementById('featured-modal-openpage').href = `/presentations/${pid}`;
           openPreview(pid, meta.title || title, meta.original_url || '');
         }).catch(()=>{
           document.getElementById('featured-modal-desc').textContent = '';
           document.getElementById('featured-modal-meta').textContent = '';
+          activeOwnerId = null;
+          activeOwnerUsername = '';
+          if (contactBtn) contactBtn.style.display = 'none';
           document.getElementById('featured-modal-openpage').href = `/presentations/${pid}`;
           openPreview(pid, title, '#');
         });
       }, true);
+    }
+
+    if (fullscreenBtn){
+      fullscreenBtn.addEventListener('click', async function(){
+        const target = document.querySelector('#featured-modal-main img, #featured-modal-main iframe');
+        if (!target) return;
+        try{
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+            return;
+          }
+          if (target.requestFullscreen) {
+            await target.requestFullscreen();
+            return;
+          }
+          if (target.webkitRequestFullscreen) {
+            target.webkitRequestFullscreen();
+            return;
+          }
+          if (target.webkitEnterFullscreen) {
+            target.webkitEnterFullscreen();
+          }
+        }catch(e){
+          console.warn('Fullscreen unavailable', e);
+        }
+      });
     }
 
     // show/hide with proper layering
