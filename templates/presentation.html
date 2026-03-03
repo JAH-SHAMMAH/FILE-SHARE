@@ -12,7 +12,13 @@
             <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef1ff,#ffd9a8);font-weight:700;color:#1f1f3f">{{ (p.owner_username or 'U')[:1].upper() }}</div>
           {% endif %}
           <div style="line-height:1">
-            <div style="font-weight:700">{{ p.owner_username or (p.author or 'Unknown') }} <span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }}">★</span></div>
+            <div style="font-weight:700">
+              {% set uwb_name = p.owner_username or (p.author or 'Unknown') %}
+              {% set uwb_role = p.owner_site_role|default('passerby') %}
+              {% set uwb_href = '/users/' ~ p.owner_username if p.owner_username else '' %}
+              {% set uwb_prefix = '' %}
+              {% include '_user_with_badge.html' %}
+            </div>
             <div class="muted" style="font-size:12px">{{ owner_presentation_count or 0 }} presentations · {{ followers_count or 0 }} followers</div>
             {% if creator_badges %}
               <div class="creator-badges">
@@ -356,7 +362,13 @@
     <ul>
       {% for c in comments %}
       <li>
-        <strong><a href="/profile/{{ c.user_id }}" style="color:inherit;text-decoration:underline;">{{ comment_users.get(c.user_id) or ('User #' ~ c.user_id) }}</a></strong>
+        <strong>
+          {% set uwb_name = comment_users.get(c.user_id) or ('User #' ~ c.user_id) %}
+          {% set uwb_role = comment_user_roles.get(c.user_id) or 'passerby' %}
+          {% set uwb_href = '/profile/' ~ c.user_id %}
+          {% set uwb_prefix = '' %}
+          {% include '_user_with_badge.html' %}
+        </strong>
         <small class="muted">{{ c.created_at|humanize_comment_date }}</small>
         <div>{{ c.content }}</div>
       </li>

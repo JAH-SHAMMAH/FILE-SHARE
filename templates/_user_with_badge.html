@@ -1,0 +1,25 @@
+{# Reusable username + role badge renderer.
+   Expected context vars:
+   - uwb_name (required)
+   - uwb_role (optional)
+   - uwb_href (optional)
+   - uwb_prefix (optional, e.g. "by")
+   - uwb_container_class (optional extra classes)
+   - uwb_name_class (optional extra classes)
+#}
+{% if uwb_name %}
+  {% set _uwb_role = uwb_role|default('')|lower %}
+  <span class="user-with-badge{% if uwb_container_class %} {{ uwb_container_class }}{% endif %}">
+    {% if uwb_prefix %}
+      <span class="user-with-badge__prefix">{{ uwb_prefix }}</span>
+    {% endif %}
+    {% if uwb_href %}
+      <a class="user-with-badge__name{% if uwb_name_class %} {{ uwb_name_class }}{% endif %}" href="{{ uwb_href }}">{{ uwb_name }}</a>
+    {% else %}
+      <span class="user-with-badge__name{% if uwb_name_class %} {{ uwb_name_class }}{% endif %}">{{ uwb_name }}</span>
+    {% endif %}
+    {% if _uwb_role %}
+      <span class="role-badge role-badge--{{ _uwb_role }} user-with-badge__badge" title="{{ _uwb_role|capitalize }}">&#9733;</span>
+    {% endif %}
+  </span>
+{% endif %}

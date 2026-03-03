@@ -2,14 +2,14 @@
 
 {% block content %}
 {# categories are rendered globally in base.html; no duplicate here #}
-<section class="container" style="margin-top:-28px; padding-top:0px;">
+<section class="container featured-page-shell">
   <div class="panel-head featured-hero">
     <h1 class="section-title featured-hero__title">Your Learning Feed</h1>
     <p class="muted featured-hero__subtitle">Curated and spotlighted decks — slide through the selection.</p>
   </div>
 
   <div class="featured-carousel scroll-row" data-scroll-row>
-    <div class="featured-nav" style="left:-48px;">
+    <div class="featured-nav featured-nav--prev">
       <button id="featured-prev" class="prev" data-scroll-prev aria-label="Scroll left">◀</button>
     </div>
 
@@ -17,7 +17,7 @@
       {% for p in featured %}
       <article class="featured-card card" data-pid="{{ p.id }}">
         <a class="card__link" href="{{ url_for('view_presentation', presentation_id=p.id) }}">
-          <div class="card__thumb" style="position:relative;">
+          <div class="card__thumb">
             {% set is_pdf = p.filename and p.filename.lower().endswith('.pdf') %}
             {% set slide_thumb = '/presentations/' ~ p.id ~ '/slide/0?v=' ~ (p.filename or p.id) %}
             {% if is_pdf %}
@@ -30,16 +30,16 @@
             </button>
           </div>
           <div class="card__body">
-            <h4>{{ p.title }}</h4>
-            <p class="muted featured-byline">
+            <h4 class="featured-title">{{ p.title }}</h4>
+            <p class="muted featured-byline featured-owner">
               {% if p.owner_username %}
-                <a class="featured-byline__inline byline-link" href="/users/{{ p.owner_username }}">by <span class="byline-name">{{ p.owner_username }}</span></a>
+                <a class="featured-byline__inline byline-link featured-owner" href="/users/{{ p.owner_username }}">by <span class="byline-name featured-owner">{{ p.owner_username }}</span></a>
               {% else %}
                 <span class="featured-byline__inline">by {{ p.author or 'Unknown' }}</span>
               {% endif %}
               {% if p.owner_username %}<span class="role-badge role-badge--{{ (p.owner_site_role|default('passerby'))|lower }} featured-byline__badge">★</span>{% endif %}
             </p>
-            <p class="muted" style="margin-top:6px;">
+            <p class="muted featured-card__stats">
               <strong>{{ p.owner_presentation_count or 0 }}</strong> presentations ·
               <strong>{{ p.views or 0 }}</strong> views ·
               <strong>{{ p.downloads or 0 }}</strong> downloads ·
@@ -47,6 +47,12 @@
             </p>
           </div>
         </a>
+        <div class="featured-card__actions card-buttons">
+          <button class="btn btn--ghost preview-trigger featured-card__quick-preview" type="button">Quick Preview</button>
+          {% if p.owner_id %}
+          <button class="btn btn--ghost btn-contact btn-message" type="button" data-user-id="{{ p.owner_id }}" data-username="{{ p.owner_username or '' }}" data-email="{{ p.owner_email or '' }}" data-bypass="1">Contact Owner</button>
+          {% endif %}
+        </div>
         <button class="card__bookmark" type="button" data-id="{{ p.id }}" aria-label="Save presentation" title="Save for later">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-7-4-7 4V3z"/></svg>
         </button>
@@ -54,7 +60,7 @@
       {% endfor %}
     </div>
 
-    <div class="featured-nav" style="right:-48px;">
+    <div class="featured-nav featured-nav--next">
       <button id="featured-next" class="next" data-scroll-next aria-label="Scroll right">▶</button>
     </div>
   </div>

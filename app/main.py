@@ -269,12 +269,14 @@ def student_spaces(request: Request, current_user: User = Depends(get_current_us
                 u = session.get(User, tm.user_id)
                 if u:
                     teachers.append(u)
-            # attach teachers list for template use
-            try:
-                s.teachers = teachers
-            except Exception:
-                pass
-            spaces.append(s)
+            # render-safe object for template use
+            spaces.append(
+                SimpleNamespace(
+                    id=s.id,
+                    name=s.name,
+                    teachers=teachers,
+                )
+            )
     return templates.TemplateResponse('student_spaces.html', {'request': request, 'spaces': spaces})
 
 
@@ -7204,12 +7206,16 @@ def view_presentation(request: Request, presentation_id: int):
             select(Comment).where(Comment.presentation_id == presentation_id)
         ).all()
         comment_users = {}
+        comment_user_roles = {}
         if comments:
             user_ids = {c.user_id for c in comments if c.user_id is not None}
             if user_ids:
                 users = session.exec(select(User).where(User.id.in_(user_ids))).all()
                 comment_users = {
                     u.id: (u.full_name or u.username or f"User {u.id}") for u in users
+                }
+                comment_user_roles = {
+                    u.id: getattr(u, "site_role", None) for u in users
                 }
 
         likes = session.exec(
@@ -7465,6 +7471,7 @@ def view_presentation(request: Request, presentation_id: int):
             "p": p_safe,
             "comments": comments,
             "comment_users": comment_users,
+            "comment_user_roles": comment_user_roles,
             "likes": len(likes),
             "viewer_url": viewer_url,
             "conversion_status": conversion_status,

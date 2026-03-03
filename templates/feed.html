@@ -39,11 +39,11 @@
               {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
             </p>
             <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
-            <div class="card__actions">
+            <div class="card__actions card-buttons">
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
               {% if pres.owner_id %}
               <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
               {% endif %}
-              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
             </div>
           </div>
         </a>
@@ -83,11 +83,11 @@
               {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
             </p>
             <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
-            <div class="card__actions">
+            <div class="card__actions card-buttons">
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
               {% if pres.owner_id %}
               <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
               {% endif %}
-              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
             </div>
           </div>
         </a>
@@ -130,11 +130,11 @@
                 {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
               </p>
               <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
-              <div class="card__actions">
+              <div class="card__actions card-buttons">
+                <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
                 {% if pres.owner_id %}
                 <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
                 {% endif %}
-                <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
               </div>
             </div>
           </a>
@@ -174,11 +174,11 @@
               {% if pres.owner_username %}<span class="role-badge role-badge--{{ (pres.owner_site_role|default('passerby'))|lower }} feed-byline__badge">★</span>{% endif %}
             </p>
             <div class="card__meta">{{ pres.owner_presentation_count or 0 }} presentations · {{ pres.views or 0 }} views · {{ pres.downloads or 0 }} downloads · {{ pres.likes_count or 0 }} likes</div>
-            <div class="card__actions">
+            <div class="card__actions card-buttons">
+              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
               {% if pres.owner_id %}
               <button class="btn btn--ghost btn-contact btn-message" data-user-id="{{ pres.owner_id }}" data-username="{{ pres.owner_username or '' }}" data-email="{{ pres.owner_email or '' }}" data-bypass="1">Contact Owner</button>
               {% endif %}
-              <button class="btn btn--ghost preview-btn" data-preview-id="{{ pres.id }}">Quick preview</button>
             </div>
           </div>
         </a>
